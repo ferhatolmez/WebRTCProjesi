@@ -1,0 +1,540 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>WebRTC Web İstemcisi</title>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f0f0f0;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            padding: 20px;
+        }
+        .header {
+            border-bottom: 2px solid #007bff;
+            padding-bottom: 15px;
+            margin-bottom: 20px;
+        }
+        .connection-panel {
+            display: flex;
+            gap: 15px;
+            align-items: center;
+            margin-bottom: 20px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 5px;
+        }
+        .video-panel {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+        .video-container {
+            flex: 1;
+            text-align: center;
+        }
+        .video-container video,
+        .video-container img {
+            width: 100%;
+            max-width: 400px;
+            height: 300px;
+            background: #000;
+            border-radius: 5px;
+            object-fit: cover;
+        }
+        .chat-panel {
+            display: flex;
+            gap: 20px;
+        }
+        .messages-container {
+            flex: 2;
+        }
+        .log-container {
+            flex: 1;
+        }
+        textarea {
+            width: 100%;
+            height: 200px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            padding: 10px;
+            font-family: monospace;
+            resize: vertical;
+        }
+        input[type="text"] {
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        button {
+            padding: 8px 16px;
+            background: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        button:disabled {
+            background: #6c757d;
+            cursor: not-allowed;
+        }
+        .status {
+            font-weight: bold;
+            padding: 5px 10px;
+            border-radius: 4px;
+        }
+        .status.connected {
+            background: #d4edda;
+            color: #155724;
+        }
+        .status.disconnected {
+            background: #f8d7da;
+            color: #721c24;
+        }
+        .video-controls {
+            margin: 10px 0;
+        }
+        .message-input-container {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
+        }
+        .message-input-container input {
+            flex: 1;
+        }
+        h1 {
+            color: #007bff;
+            margin: 0 0 10px 0;
+        }
+        h3 {
+            margin: 10px 0 5px 0;
+            color: #333;
+        }
+        label {
+            font-weight: bold;
+            margin-right: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>WebRTC Web İstemcisi</h1>
+            <div class="connection-panel">
+                <label>Oda ID:</label>
+                <input type="text" id="roomId" value="room1" />
+                <label>Kullanıcı Adı:</label>
+                <input type="text" id="userName" value="WebUser" />
+                <button id="connectBtn">Bağlan</button>
+                <button id="disconnectBtn" disabled>Bağlantıyı Kes</button>
+                <span id="status" class="status disconnected">Bağlı Değil</span>
+            </div>
+        </div>
+
+        <div class="video-panel">
+            <div class="video-container">
+                <h3>Yerel Video</h3>
+                <video id="localVideo" autoplay muted playsinline></video>
+                <div class="video-controls">
+                    <button id="startLocalVideo">Kamerayı Başlat</button>
+                    <button id="stopLocalVideo" disabled>Kamerayı Durdur</button>
+                </div>
+            </div>
+
+            <div class="video-container">
+                <h3>Uzak Video</h3>
+                <video id="remoteVideo" autoplay playsinline></video>
+                <img id="remoteImage" alt="Uzak Kare" />
+                <div class="video-controls">
+                    <button id="startCallBtn" disabled>Görüşme Başlat</button>
+                    <button id="endCallBtn" disabled>Görüşmeyi Bitir</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="chat-panel">
+            <div class="messages-container">
+                <h3>Mesajlar</h3>
+                <textarea id="messages" readonly></textarea>
+                <div class="message-input-container">
+                    <input type="text" id="messageInput" placeholder="Mesajınızı yazın..." disabled />
+                    <button id="sendMessageBtn" disabled>Gönder</button>
+                </div>
+            </div>
+
+            <div class="log-container">
+                <h3>Kayıt</h3>
+                <textarea id="log" readonly></textarea>
+            </div>
+        </div>
+    </div>
+
+    <!-- SignalR Client -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/7.0.0/signalr.min.js"></script>
+
+    <script>
+        let connection = null;
+        let localStream = null;
+        let remoteStream = null;
+        let peerConnection = null;
+        let currentRoomId = '';
+        let currentUserName = '';
+        let connectedUsers = new Map();
+
+        const rtcConfiguration = {
+            iceServers: [
+                { urls: 'stun:stun.l.google.com:19302' },
+                { urls: 'stun:stun1.l.google.com:19302' }
+            ]
+        };
+
+        const elements = {
+            roomId: document.getElementById('roomId'),
+            userName: document.getElementById('userName'),
+            connectBtn: document.getElementById('connectBtn'),
+            disconnectBtn: document.getElementById('disconnectBtn'),
+            status: document.getElementById('status'),
+            localVideo: document.getElementById('localVideo'),
+            remoteVideo: document.getElementById('remoteVideo'),
+            remoteImage: document.getElementById('remoteImage'),
+            startLocalVideo: document.getElementById('startLocalVideo'),
+            stopLocalVideo: document.getElementById('stopLocalVideo'),
+            startCallBtn: document.getElementById('startCallBtn'),
+            endCallBtn: document.getElementById('endCallBtn'),
+            messages: document.getElementById('messages'),
+            messageInput: document.getElementById('messageInput'),
+            sendMessageBtn: document.getElementById('sendMessageBtn'),
+            log: document.getElementById('log')
+        };
+
+        elements.connectBtn.addEventListener('click', connectToServer);
+        elements.disconnectBtn.addEventListener('click', disconnectFromServer);
+        elements.startLocalVideo.addEventListener('click', startLocalVideo);
+        elements.stopLocalVideo.addEventListener('click', stopLocalVideo);
+        elements.startCallBtn.addEventListener('click', startCall);
+        elements.endCallBtn.addEventListener('click', endCall);
+        elements.sendMessageBtn.addEventListener('click', sendMessage);
+        elements.messageInput.addEventListener('keypress', e => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                sendMessage();
+            }
+        });
+
+        async function connectToServer() {
+            if (!elements.roomId.value.trim() || !elements.userName.value.trim()) {
+                alert('Lütfen Oda ID ve Kullanıcı Adı girin!');
+                return;
+            }
+
+            try {
+                connection = new signalR.HubConnectionBuilder()
+                    .withUrl("http://localhost:5000/webrtchub")
+                    .configureLogging(signalR.LogLevel.Information)
+                    .build();
+
+                setupSignalRHandlers();
+                await connection.start();
+
+                currentRoomId = elements.roomId.value;
+                currentUserName = elements.userName.value;
+
+                await connection.invoke("JoinRoom", currentRoomId, currentUserName, "WebClient");
+
+                updateUIForConnected();
+                logMessage(`Odaya bağlanıldı: ${currentRoomId}`);
+            } catch (error) {
+                alert(`Bağlantı başarısız: ${error.message}`);
+                logMessage(`Bağlantı hatası: ${error.message}`);
+            }
+        }
+
+        function setupSignalRHandlers() {
+            if (!connection) return;
+
+            connection.on("UserJoined", (userName, userType, connectionId) => {
+                connectedUsers.set(connectionId, userName);
+                addMessage(`[SİSTEM] ${userName} (${userType}) odaya katıldı`);
+                logMessage(`Kullanıcı katıldı: ${userName} (${userType}) - ${connectionId}`);
+                if (connectedUsers.size > 0) {
+                    elements.startCallBtn.disabled = false;
+                }
+            });
+
+            connection.on("UserDisconnected", connectionId => {
+                if (connectedUsers.has(connectionId)) {
+                    const userName = connectedUsers.get(connectionId);
+                    connectedUsers.delete(connectionId);
+                    addMessage(`[SİSTEM] ${userName} odadan ayrıldı`);
+                    logMessage(`Kullanıcı ayrıldı: ${userName}`);
+                    if (connectedUsers.size === 0) {
+                        elements.startCallBtn.disabled = true;
+                    }
+                }
+            });
+
+            connection.on("ReceiveMessage", (userName, message, timestamp) => {
+                addMessage(`[${timestamp}] ${userName}: ${message}`);
+            });
+
+            connection.on("ReceiveOffer", async (offer, fromConnectionId) => {
+                logMessage(`WebRTC Teklifi alındı: ${fromConnectionId}`);
+                await handleWebRTCOffer(offer, fromConnectionId);
+            });
+
+            connection.on("ReceiveAnswer", async (answer, fromConnectionId) => {
+                logMessage(`WebRTC Yanıtı alındı: ${fromConnectionId}`);
+                await handleWebRTCAnswer(answer, fromConnectionId);
+            });
+
+            connection.on("ReceiveIceCandidate", async (candidate, fromConnectionId) => {
+                logMessage(`ICE Adayı alındı: ${fromConnectionId}`);
+                await handleIceCandidate(candidate, fromConnectionId);
+            });
+
+            // ASP.NET / Windows istemcisinden gelen Base64 kare
+            connection.on("ReceiveVideoFrame", (frameData, fromConnectionId) => {
+                elements.remoteImage.src = "data:image/jpeg;base64," + frameData;
+                elements.remoteImage.style.display = "block";
+                elements.remoteVideo.style.display = "none";
+                logMessage("Base64 video karesi alındı");
+            });
+        }
+
+        async function handleWebRTCOffer(offerJson, fromConnectionId) {
+            try {
+                const offer = JSON.parse(offerJson);
+                createPeerConnection(fromConnectionId);
+                await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
+                logMessage("Teklif uzaktan tanım olarak ayarlandı");
+                const answer = await peerConnection.createAnswer();
+                await peerConnection.setLocalDescription(answer);
+                await connection.invoke("SendAnswer", currentRoomId, fromConnectionId, JSON.stringify(answer));
+                logMessage("Yanıt gönderildi");
+            } catch (error) {
+                logMessage(`Teklif işleme hatası: ${error.message}`);
+            }
+        }
+
+        async function handleWebRTCAnswer(answerJson, fromConnectionId) {
+            try {
+                const answer = JSON.parse(answerJson);
+                await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
+                logMessage("Yanıt uzaktan tanım olarak ayarlandı");
+            } catch (error) {
+                logMessage(`Yanıt işleme hatası: ${error.message}`);
+            }
+        }
+
+        async function handleIceCandidate(candidateJson, fromConnectionId) {
+            try {
+                const candidate = JSON.parse(candidateJson);
+                if (peerConnection) {
+                    await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+                    logMessage("ICE adayı eklendi");
+                }
+            } catch (error) {
+                logMessage(`ICE adayı ekleme hatası: ${error.message}`);
+            }
+        }
+
+        function createPeerConnection() {
+            if (peerConnection) return;
+            peerConnection = new RTCPeerConnection(rtcConfiguration);
+
+            peerConnection.onicecandidate = async event => {
+                if (event.candidate) {
+                    const candidateJson = JSON.stringify(event.candidate);
+                    for (let [connId] of connectedUsers) {
+                        if (connId !== connection.connectionId) {
+                            await connection.invoke("SendIceCandidate", currentRoomId, connId, candidateJson);
+                            logMessage(`ICE adayı gönderildi → ${connId}`);
+                        }
+                    }
+                }
+            };
+
+            peerConnection.ontrack = event => {
+                logMessage("Uzak parça alındı (WebRTC)");
+                if (!remoteStream) {
+                    remoteStream = new MediaStream();
+                    elements.remoteVideo.srcObject = remoteStream;
+                }
+                event.streams[0].getTracks().forEach(track => {
+                    remoteStream.addTrack(track);
+                });
+
+                elements.remoteVideo.style.display = "block";
+                elements.remoteImage.style.display = "none";
+            };
+
+            peerConnection.onconnectionstatechange = () => {
+                logMessage(`Bağlantı durumu: ${peerConnection.connectionState}`);
+                elements.endCallBtn.disabled = peerConnection.connectionState !== 'connected';
+                elements.startCallBtn.disabled = peerConnection.connectionState === 'connected';
+            };
+
+            if (localStream) {
+                localStream.getTracks().forEach(track => {
+                    peerConnection.addTrack(track, localStream);
+                });
+            }
+        }
+
+        async function startCall() {
+            if (!localStream) {
+                alert("Önce kameranızı başlatın!");
+                return;
+            }
+            if (connectedUsers.size === 0) {
+                alert("Odada başka kullanıcı yok!");
+                return;
+            }
+
+            try {
+                createPeerConnection();
+                const offer = await peerConnection.createOffer();
+                await peerConnection.setLocalDescription(offer);
+
+                for (let [connId] of connectedUsers) {
+                    if (connId !== connection.connectionId) {
+                        await connection.invoke("SendOffer", currentRoomId, connId, JSON.stringify(offer));
+                        logMessage(`Teklif gönderildi → ${connId}`);
+                    }
+                }
+
+                elements.startCallBtn.disabled = true;
+                elements.endCallBtn.disabled = false;
+                logMessage("Görüşme başlatıldı. Yanıt bekleniyor...");
+            } catch (error) {
+                alert(`Görüşme hatası: ${error.message}`);
+                logMessage(`Görüşme hatası: ${error.message}`);
+            }
+        }
+
+        function endCall() {
+            if (peerConnection) peerConnection.close();
+            peerConnection = null;
+            if (remoteStream) remoteStream.getTracks().forEach(t => t.stop());
+            remoteStream = null;
+            elements.remoteVideo.srcObject = null;
+            elements.remoteImage.style.display = "none";
+            elements.remoteVideo.style.display = "block";
+            elements.startCallBtn.disabled = false;
+            elements.endCallBtn.disabled = true;
+            logMessage("Görüşme sonlandırıldı");
+        }
+
+        async function startLocalVideo() {
+            try {
+                localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+                elements.localVideo.srcObject = localStream;
+                elements.startLocalVideo.disabled = true;
+                elements.stopLocalVideo.disabled = false;
+                elements.startCallBtn.disabled = connectedUsers.size === 0;
+                elements.messageInput.disabled = false;
+                elements.sendMessageBtn.disabled = false;
+                logMessage("Kamera başlatıldı");
+            } catch (error) {
+                alert(`Kamera hatası: ${error.message}`);
+                logMessage(`Kamera hatası: ${error.message}`);
+            }
+        }
+
+        function stopLocalVideo() {
+            if (localStream) {
+                localStream.getTracks().forEach(t => t.stop());
+                localStream = null;
+                elements.localVideo.srcObject = null;
+                elements.startLocalVideo.disabled = false;
+                elements.stopLocalVideo.disabled = true;
+                elements.startCallBtn.disabled = true;
+                elements.messageInput.disabled = true;
+                elements.sendMessageBtn.disabled = true;
+                logMessage("Kamera durduruldu");
+            }
+        }
+
+        async function sendMessage() {
+            const message = elements.messageInput.value.trim();
+            if (!message) return;
+            if (!connection || connection.state !== 'Connected') {
+                alert('Bağlı değilsiniz!');
+                return;
+            }
+            const timestamp = new Date().toLocaleTimeString();
+            await connection.invoke("SendMessage", currentRoomId, currentUserName, message, timestamp);
+            elements.messageInput.value = '';
+        }
+
+        function addMessage(msg) {
+            elements.messages.value += msg + '\n';
+            elements.messages.scrollTop = elements.messages.scrollHeight;
+        }
+
+        function logMessage(msg) {
+            const time = new Date().toLocaleTimeString();
+            elements.log.value += `[${time}] ${msg}\n`;
+            elements.log.scrollTop = elements.log.scrollHeight;
+        }
+
+        async function disconnectFromServer() {
+            try {
+                if (connection) {
+                    // 🆕 Yalnızca bağlantı gerçekten "Connected" durumundaysa sunucuya LeaveRoom gönder
+                    if (connection.state === "Connected") {
+                        await connection.invoke("LeaveRoom", currentRoomId, currentUserName);
+                    }
+                    // 🆕 Her durumda güvenle durdur
+                    await connection.stop();
+                    connection = null;         // 🆕 Belleği temizle
+                }
+
+                endCall();
+                stopLocalVideo();
+
+                elements.connectBtn.disabled = false;
+                elements.disconnectBtn.disabled = true;
+                elements.roomId.disabled = false;
+                elements.userName.disabled = false;
+                elements.status.textContent = 'Bağlı Değil';
+                elements.status.classList.remove('connected');
+                elements.status.classList.add('disconnected');
+                elements.messages.value = '';
+                elements.log.value = '';
+                logMessage("Bağlantı sonlandırıldı");   // 🆕
+            } catch (error) {
+                alert(`Bağlantı kesilemedi: ${error.message}`);
+                logMessage(`Bağlantı kesme hatası: ${error.message}`);
+            }
+        }
+
+        function updateUIForConnected() {
+            elements.connectBtn.disabled = true;
+            elements.disconnectBtn.disabled = false;
+            elements.roomId.disabled = true;
+            elements.userName.disabled = true;
+            elements.status.textContent = 'Bağlı';
+            elements.status.classList.remove('disconnected');
+            elements.status.classList.add('connected');
+            elements.startLocalVideo.disabled = false;
+            elements.startCallBtn.disabled = true;
+        }
+    </script>
+</body>
+</html>

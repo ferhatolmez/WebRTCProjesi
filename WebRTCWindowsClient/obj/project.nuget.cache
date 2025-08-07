@@ -1,0 +1,71 @@
+{
+  "version": 2,
+  "dgSpecHash": "tvXg0vRhsyg=",
+  "success": true,
+  "projectFilePath": "C:\\Users\\Asus\\Desktop\\WebRTCProjesi\\WebRTCWindowsClient\\WebRTCWindowsClient.csproj",
+  "expectedPackageFiles": [
+    "C:\\Users\\Asus\\.nuget\\packages\\aforge\\2.2.5\\aforge.2.2.5.nupkg.sha512",
+    "C:\\Users\\Asus\\.nuget\\packages\\aforge.video\\2.2.5\\aforge.video.2.2.5.nupkg.sha512",
+    "C:\\Users\\Asus\\.nuget\\packages\\aforge.video.directshow\\2.2.5\\aforge.video.directshow.2.2.5.nupkg.sha512",
+    "C:\\Users\\Asus\\.nuget\\packages\\microsoft.aspnetcore.connections.abstractions\\9.0.6\\microsoft.aspnetcore.connections.abstractions.9.0.6.nupkg.sha512",
+    "C:\\Users\\Asus\\.nuget\\packages\\microsoft.aspnetcore.http.connections.client\\9.0.6\\microsoft.aspnetcore.http.connections.client.9.0.6.nupkg.sha512",
+    "C:\\Users\\Asus\\.nuget\\packages\\microsoft.aspnetcore.http.connections.common\\9.0.6\\microsoft.aspnetcore.http.connections.common.9.0.6.nupkg.sha512",
+    "C:\\Users\\Asus\\.nuget\\packages\\microsoft.aspnetcore.signalr.client\\9.0.6\\microsoft.aspnetcore.signalr.client.9.0.6.nupkg.sha512",
+    "C:\\Users\\Asus\\.nuget\\packages\\microsoft.aspnetcore.signalr.client.core\\9.0.6\\microsoft.aspnetcore.signalr.client.core.9.0.6.nupkg.sha512",
+    "C:\\Users\\Asus\\.nuget\\packages\\microsoft.aspnetcore.signalr.common\\9.0.6\\microsoft.aspnetcore.signalr.common.9.0.6.nupkg.sha512",
+    "C:\\Users\\Asus\\.nuget\\packages\\microsoft.aspnetcore.signalr.protocols.json\\9.0.6\\microsoft.aspnetcore.signalr.protocols.json.9.0.6.nupkg.sha512",
+    "C:\\Users\\Asus\\.nuget\\packages\\microsoft.bcl.asyncinterfaces\\9.0.6\\microsoft.bcl.asyncinterfaces.9.0.6.nupkg.sha512",
+    "C:\\Users\\Asus\\.nuget\\packages\\microsoft.bcl.timeprovider\\9.0.6\\microsoft.bcl.timeprovider.9.0.6.nupkg.sha512",
+    "C:\\Users\\Asus\\.nuget\\packages\\microsoft.extensions.dependencyinjection\\9.0.6\\microsoft.extensions.dependencyinjection.9.0.6.nupkg.sha512",
+    "C:\\Users\\Asus\\.nuget\\packages\\microsoft.extensions.dependencyinjection.abstractions\\9.0.6\\microsoft.extensions.dependencyinjection.abstractions.9.0.6.nupkg.sha512",
+    "C:\\Users\\Asus\\.nuget\\packages\\microsoft.extensions.features\\9.0.6\\microsoft.extensions.features.9.0.6.nupkg.sha512",
+    "C:\\Users\\Asus\\.nuget\\packages\\microsoft.extensions.logging\\9.0.6\\microsoft.extensions.logging.9.0.6.nupkg.sha512",
+    "C:\\Users\\Asus\\.nuget\\packages\\microsoft.extensions.logging.abstractions\\9.0.6\\microsoft.extensions.logging.abstractions.9.0.6.nupkg.sha512",
+    "C:\\Users\\Asus\\.nuget\\packages\\microsoft.extensions.options\\9.0.6\\microsoft.extensions.options.9.0.6.nupkg.sha512",
+    "C:\\Users\\Asus\\.nuget\\packages\\microsoft.extensions.primitives\\9.0.6\\microsoft.extensions.primitives.9.0.6.nupkg.sha512",
+    "C:\\Users\\Asus\\.nuget\\packages\\system.diagnostics.diagnosticsource\\9.0.6\\system.diagnostics.diagnosticsource.9.0.6.nupkg.sha512",
+    "C:\\Users\\Asus\\.nuget\\packages\\system.io.pipelines\\9.0.6\\system.io.pipelines.9.0.6.nupkg.sha512",
+    "C:\\Users\\Asus\\.nuget\\packages\\system.net.serversentevents\\9.0.6\\system.net.serversentevents.9.0.6.nupkg.sha512",
+    "C:\\Users\\Asus\\.nuget\\packages\\system.text.encodings.web\\9.0.6\\system.text.encodings.web.9.0.6.nupkg.sha512",
+    "C:\\Users\\Asus\\.nuget\\packages\\system.text.json\\9.0.6\\system.text.json.9.0.6.nupkg.sha512",
+    "C:\\Users\\Asus\\.nuget\\packages\\system.threading.channels\\9.0.6\\system.threading.channels.9.0.6.nupkg.sha512"
+  ],
+  "logs": [
+    {
+      "code": "NU1701",
+      "level": "Warning",
+      "message": "'AForge 2.2.5' paketi, proje hedef çerçevesi 'net8.0-windows7.0' yerine '.NETFramework,Version=v4.6.1, .NETFramework,Version=v4.6.2, .NETFramework,Version=v4.7, .NETFramework,Version=v4.7.1, .NETFramework,Version=v4.7.2, .NETFramework,Version=v4.8, .NETFramework,Version=v4.8.1' kullanılarak geri yüklendi. Bu paket projenizle tamamen uyumlu olmayabilir.",
+      "projectPath": "C:\\Users\\Asus\\Desktop\\WebRTCProjesi\\WebRTCWindowsClient\\WebRTCWindowsClient.csproj",
+      "warningLevel": 1,
+      "filePath": "C:\\Users\\Asus\\Desktop\\WebRTCProjesi\\WebRTCWindowsClient\\WebRTCWindowsClient.csproj",
+      "libraryId": "AForge",
+      "targetGraphs": [
+        "net8.0-windows7.0"
+      ]
+    },
+    {
+      "code": "NU1701",
+      "level": "Warning",
+      "message": "'AForge.Video 2.2.5' paketi, proje hedef çerçevesi 'net8.0-windows7.0' yerine '.NETFramework,Version=v4.6.1, .NETFramework,Version=v4.6.2, .NETFramework,Version=v4.7, .NETFramework,Version=v4.7.1, .NETFramework,Version=v4.7.2, .NETFramework,Version=v4.8, .NETFramework,Version=v4.8.1' kullanılarak geri yüklendi. Bu paket projenizle tamamen uyumlu olmayabilir.",
+      "projectPath": "C:\\Users\\Asus\\Desktop\\WebRTCProjesi\\WebRTCWindowsClient\\WebRTCWindowsClient.csproj",
+      "warningLevel": 1,
+      "filePath": "C:\\Users\\Asus\\Desktop\\WebRTCProjesi\\WebRTCWindowsClient\\WebRTCWindowsClient.csproj",
+      "libraryId": "AForge.Video",
+      "targetGraphs": [
+        "net8.0-windows7.0"
+      ]
+    },
+    {
+      "code": "NU1701",
+      "level": "Warning",
+      "message": "'AForge.Video.DirectShow 2.2.5' paketi, proje hedef çerçevesi 'net8.0-windows7.0' yerine '.NETFramework,Version=v4.6.1, .NETFramework,Version=v4.6.2, .NETFramework,Version=v4.7, .NETFramework,Version=v4.7.1, .NETFramework,Version=v4.7.2, .NETFramework,Version=v4.8, .NETFramework,Version=v4.8.1' kullanılarak geri yüklendi. Bu paket projenizle tamamen uyumlu olmayabilir.",
+      "projectPath": "C:\\Users\\Asus\\Desktop\\WebRTCProjesi\\WebRTCWindowsClient\\WebRTCWindowsClient.csproj",
+      "warningLevel": 1,
+      "filePath": "C:\\Users\\Asus\\Desktop\\WebRTCProjesi\\WebRTCWindowsClient\\WebRTCWindowsClient.csproj",
+      "libraryId": "AForge.Video.DirectShow",
+      "targetGraphs": [
+        "net8.0-windows7.0"
+      ]
+    }
+  ]
+}

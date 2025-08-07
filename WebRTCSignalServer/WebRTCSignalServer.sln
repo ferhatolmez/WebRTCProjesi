@@ -1,0 +1,25 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.13.36105.23 d17.13
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WebRTCSignalServer", "WebRTCSignalServer.csproj", "{FF657A41-BFA1-4532-B71F-CC04742C6E9A}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{FF657A41-BFA1-4532-B71F-CC04742C6E9A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{FF657A41-BFA1-4532-B71F-CC04742C6E9A}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{FF657A41-BFA1-4532-B71F-CC04742C6E9A}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{FF657A41-BFA1-4532-B71F-CC04742C6E9A}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {16C5C8EA-5BDF-4897-93CB-BF7FA82D861C}
+	EndGlobalSection
+EndGlobal
