@@ -20,7 +20,9 @@ jobs:
         dotnet-version: '8.0.x'
 
     - name: Restore dependencies
-      run: dotnet restore
+      run: |
+        dotnet restore WebRTCSignalServer/WebRTCSignalServer.csproj
+        dotnet restore WebRTCWindowsClient/WebRTCWindowsClient.csproj
 
     - name: Build WebRTC Server
       run: dotnet build WebRTCSignalServer/WebRTCSignalServer.csproj --configuration Release --no-restore
