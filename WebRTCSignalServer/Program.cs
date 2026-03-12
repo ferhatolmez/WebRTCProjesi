@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.SignalR;
+using Microsoft.AspNetCore.SignalR;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -186,6 +186,48 @@ public class WebRTCHub : Hub
         {
             Console.WriteLine($"❌ Error sending video frame: {ex.Message}");
             await Clients.Caller.SendAsync("Error", $"Failed to send video frame: {ex.Message}");
+        }
+    }
+
+    public async Task StopVideoCall(string roomId)
+    {
+        try
+        {
+            await Clients.GroupExcept(roomId, Context.ConnectionId).SendAsync("VideoCallStopped", Context.ConnectionId);
+            Console.WriteLine($"⏹️ Video call stopped in room {roomId} by {Context.ConnectionId}");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"❌ Error stopping video call: {ex.Message}");
+        }
+    }
+
+    public async Task LeaveRoom(string roomId, string userName = "")
+    {
+        try
+        {
+            await Groups.RemoveFromGroupAsync(Context.ConnectionId, roomId);
+
+            if (RoomUsers.ContainsKey(roomId))
+            {
+                RoomUsers[roomId].Remove(Context.ConnectionId);
+                if (RoomUsers[roomId].Count == 0)
+                    RoomUsers.Remove(roomId);
+            }
+
+            if (ConnectedUsers.ContainsKey(Context.ConnectionId))
+            {
+                var user = ConnectedUsers[Context.ConnectionId];
+                if (string.IsNullOrEmpty(userName)) userName = user.UserName;
+                user.RoomId = ""; 
+            }
+
+            await Clients.Group(roomId).SendAsync("UserLeft", userName, Context.ConnectionId);
+            Console.WriteLine($"🚪 {userName} left room {roomId}");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"❌ Error leaving room: {ex.Message}");
         }
     }
 
