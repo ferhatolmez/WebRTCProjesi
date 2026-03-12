@@ -1,8 +1,13 @@
 using Microsoft.AspNetCore.SignalR.Client;
 using System.Text.Json;
-using AForge.Video;
-using AForge.Video.DirectShow;
-using System.IO;
+using SIPSorcery.Net;
+using SIPSorcery.Media;
+using SIPSorceryMedia.Windows;
+using SIPSorceryMedia.Abstractions;
+using SIPSorceryMedia.Encoders;
+using System.Net;
+using System.Drawing.Imaging;
+using System.Runtime.InteropServices;
 
 namespace WebRTCWindowsClient
 {
@@ -12,72 +17,39 @@ namespace WebRTCWindowsClient
         private string currentRoomId = "";
         private string currentUserName = "";
         private Dictionary<string, string> connectedUsers = new Dictionary<string, string>();
+
+        private RTCPeerConnection? peerConnection;
+        private WindowsVideoEndPoint? videoEndPoint;
+        private WindowsAudioEndPoint? audioEndPoint;
         private bool isVideoCallActive = false;
         private System.Windows.Forms.Timer connectionTimer;
-
-        // Kamera deðiþkenleri
-        private FilterInfoCollection? videoDevices;
-        private VideoCaptureDevice? videoSource;
-        private bool isCameraRunning = false;
+        private DateTime lastFrameTime = DateTime.MinValue;
+        private bool firstFrameLogged = false;
 
         public Form1()
         {
             InitializeComponent();
             this.Load += Form1_Load;
-            InitializeTimer();
-            InitializeCameraDevices();
-        }
-
-        private void InitializeTimer()
-        {
             connectionTimer = new System.Windows.Forms.Timer();
-            connectionTimer.Interval = 30000; // 30 saniye
+            connectionTimer.Interval = 30000;
             connectionTimer.Tick += ConnectionTimer_Tick;
+            InitializeCameraDevices();
         }
 
         private void InitializeCameraDevices()
         {
             try
             {
-                // Kamera cihazlarýný listele
-                videoDevices = new FilterInfoCollection(FilterCategory.VideoInputDevice);
-
                 cmbCameraDevices.Items.Clear();
-
-                if (videoDevices.Count == 0)
-                {
-                    cmbCameraDevices.Items.Add("No camera devices found");
-                    cmbCameraDevices.SelectedIndex = 0;
-                    cmbCameraDevices.Enabled = false;
-                    LogMessage("No camera devices detected");
-                }
-                else
-                {
-                    foreach (FilterInfo device in videoDevices)
-                    {
-                        cmbCameraDevices.Items.Add(device.Name);
-                    }
-                    cmbCameraDevices.SelectedIndex = 0;
-                    LogMessage($"Found {videoDevices.Count} camera device(s)");
-                }
-            }
-            catch (Exception ex)
-            {
-                LogMessage($"Error initializing camera devices: {ex.Message}");
-                cmbCameraDevices.Items.Add("Camera initialization failed");
+                cmbCameraDevices.Items.Add("Default Video Device");
                 cmbCameraDevices.SelectedIndex = 0;
-                cmbCameraDevices.Enabled = false;
             }
+            catch (Exception ex) { LogMessage($"Camera init error: {ex.Message}"); }
         }
 
-        private async void ConnectionTimer_Tick(object sender, EventArgs e)
+        private async void ConnectionTimer_Tick(object? sender, EventArgs e)
         {
-            // Baðlantý durumunu kontrol et
-            if (hubConnection?.State == HubConnectionState.Disconnected)
-            {
-                LogMessage("Connection lost, attempting to reconnect...");
-                await ReconnectAsync();
-            }
+            if (hubConnection?.State == HubConnectionState.Disconnected) { await ReconnectAsync(); }
         }
 
         private async Task ReconnectAsync()
@@ -88,761 +60,585 @@ namespace WebRTCWindowsClient
                 {
                     await hubConnection.StartAsync();
                     await hubConnection.InvokeAsync("JoinRoom", currentRoomId, currentUserName, "WindowsClient");
-                    LogMessage("Reconnected successfully");
                 }
             }
-            catch (Exception ex)
-            {
-                LogMessage($"Reconnection failed: {ex.Message}");
-            }
+            catch { }
         }
 
-        private async void Form1_Load(object sender, EventArgs e)
+        private void Form1_Load(object? sender, EventArgs e)
         {
-            // Form yüklendiðinde gerekli ayarlarý yap
-            txtMessageToSend.KeyPress += TxtMessageToSend_KeyPress;
-
-            // Varsayýlan server URL'ini kontrol et
-            if (string.IsNullOrEmpty(txtServerUrl.Text))
+            txtMessageToSend.KeyPress += (s, ev) =>
             {
-                txtServerUrl.Text = "http://localhost:5000";
-            }
-
-            LogMessage("Application started");
+                if (ev.KeyChar == (char)Keys.Enter) { btnSendMessage_Click(s, ev); ev.Handled = true; }
+            };
+            if (string.IsNullOrEmpty(txtServerUrl.Text)) { txtServerUrl.Text = "http://localhost:5050"; }
+            if (string.IsNullOrEmpty(txtRoomId.Text)) { txtRoomId.Text = "room1"; }
+            LogMessage("Application started (Professional WebRTC)");
         }
 
-        private void TxtMessageToSend_KeyPress(object sender, KeyPressEventArgs e)
-        {
-            if (e.KeyChar == (char)Keys.Enter)
-            {
-                btnSendMessage_Click(sender, e);
-                e.Handled = true;
-            }
-        }
-
-        private void btnRefreshCameras_Click(object sender, EventArgs e)
-        {
-            LogMessage("Refreshing camera devices...");
-            InitializeCameraDevices();
-        }
-
-        private void StartCamera()
+        // â”€â”€â”€ Camera Management â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        private async Task StartCamera()
         {
             try
             {
-                if (videoDevices == null || videoDevices.Count == 0)
-                {
-                    LogMessage("No camera devices available");
-                    return;
-                }
+                if (videoEndPoint != null) { await videoEndPoint.CloseVideo(); videoEndPoint = null; }
 
-                if (cmbCameraDevices.SelectedIndex < 0 || cmbCameraDevices.SelectedIndex >= videoDevices.Count)
-                {
-                    LogMessage("Invalid camera device selected");
-                    return;
-                }
+                videoEndPoint = new WindowsVideoEndPoint(new VpxVideoEncoder());
+                firstFrameLogged = false;
 
-                // Mevcut kamerayý durdur
-                StopCamera();
+                // Subscribe to raw frames for local preview
+                videoEndPoint.OnVideoSourceRawSample += OnLocalVideoFrame;
 
-                // Seçilen kamera cihazýný baþlat
-                videoSource = new VideoCaptureDevice(videoDevices[cmbCameraDevices.SelectedIndex].MonikerString);
-                videoSource.NewFrame += VideoSource_NewFrame;
-                videoSource.Start();
-
-                isCameraRunning = true;
-                LogMessage($"Camera started: {videoDevices[cmbCameraDevices.SelectedIndex].Name}");
-
-                // UI güncellemesi
-                lblLocalVideo.Text = "Your Video: ON";
-                lblLocalVideo.ForeColor = Color.Green;
+                await videoEndPoint.StartVideo();
+                this.Invoke(() => { lblLocalVideo.Text = "Your Video: ON"; lblLocalVideo.ForeColor = Color.Green; });
+                LogMessage("Camera started.");
             }
             catch (Exception ex)
             {
-                LogMessage($"Error starting camera: {ex.Message}");
-                MessageBox.Show($"Failed to start camera: {ex.Message}", "Camera Error",
-                               MessageBoxButtons.OK, MessageBoxIcon.Error);
+                LogMessage($"Camera error: {ex.Message}");
             }
+        }
+
+        private void OnLocalVideoFrame(uint durationMs, int width, int height, byte[] sample, VideoPixelFormatsEnum pixelFormat)
+        {
+            try
+            {
+                // Throttle to ~15 fps for UI performance
+                var now = DateTime.UtcNow;
+                if ((now - lastFrameTime).TotalMilliseconds < 66) return;
+                lastFrameTime = now;
+
+                if (!firstFrameLogged)
+                {
+                    firstFrameLogged = true;
+                    this.BeginInvoke(() => LogMessage($"First frame: {width}x{height}, format={pixelFormat}, bytes={sample.Length}"));
+                }
+
+                if (width <= 0 || height <= 0 || sample == null || sample.Length == 0) return;
+
+                Bitmap? bmp = null;
+
+                if (pixelFormat == VideoPixelFormatsEnum.Bgr || pixelFormat == VideoPixelFormatsEnum.Rgb)
+                {
+                    // 24-bit per pixel
+                    bmp = new Bitmap(width, height, PixelFormat.Format24bppRgb);
+                    var bmpData = bmp.LockBits(new Rectangle(0, 0, width, height), ImageLockMode.WriteOnly, PixelFormat.Format24bppRgb);
+                    int copyLen = Math.Min(sample.Length, Math.Abs(bmpData.Stride) * height);
+                    Marshal.Copy(sample, 0, bmpData.Scan0, copyLen);
+                    bmp.UnlockBits(bmpData);
+                }
+                else if (pixelFormat == VideoPixelFormatsEnum.Bgra)
+                {
+                    // 32-bit per pixel
+                    bmp = new Bitmap(width, height, PixelFormat.Format32bppArgb);
+                    var bmpData = bmp.LockBits(new Rectangle(0, 0, width, height), ImageLockMode.WriteOnly, PixelFormat.Format32bppArgb);
+                    int copyLen = Math.Min(sample.Length, Math.Abs(bmpData.Stride) * height);
+                    Marshal.Copy(sample, 0, bmpData.Scan0, copyLen);
+                    bmp.UnlockBits(bmpData);
+                }
+                else if (pixelFormat == VideoPixelFormatsEnum.NV12)
+                {
+                    // NV12: Y plane (width*height) + interleaved UV (width*height/2)
+                    bmp = ConvertNV12ToBitmap(sample, width, height);
+                }
+                else if (pixelFormat == VideoPixelFormatsEnum.I420)
+                {
+                    // I420: Y (w*h) + U (w*h/4) + V (w*h/4)
+                    bmp = ConvertI420ToBitmap(sample, width, height);
+                }
+                else
+                {
+                    // Unknown format - try to create from raw bytes as 24bpp
+                    int expectedLen = width * height * 3;
+                    if (sample.Length >= expectedLen)
+                    {
+                        bmp = new Bitmap(width, height, PixelFormat.Format24bppRgb);
+                        var bmpData = bmp.LockBits(new Rectangle(0, 0, width, height), ImageLockMode.WriteOnly, PixelFormat.Format24bppRgb);
+                        Marshal.Copy(sample, 0, bmpData.Scan0, expectedLen);
+                        bmp.UnlockBits(bmpData);
+                    }
+                }
+
+                if (bmp != null)
+                {
+                    this.BeginInvoke(() =>
+                    {
+                        var old = pictureBoxLocalVideo.Image;
+                        pictureBoxLocalVideo.Image = bmp;
+                        old?.Dispose();
+                        
+                        // Send fallback base64 frame if in active call
+                        if (isVideoCallActive && hubConnection?.State == HubConnectionState.Connected)
+                        {
+                            try
+                            {
+                                if (bmp != null)
+                                {
+                                    using var ms = new MemoryStream();
+                                    // Throttle quality for performance
+                                    bmp.Save(ms, ImageFormat.Jpeg);
+                                    string base64 = Convert.ToBase64String(ms.ToArray());
+                                    // Fire and forget
+                                    _ = hubConnection.InvokeAsync("SendVideoFrame", currentRoomId, hubConnection.ConnectionId, base64);
+                                }
+                            }
+                            catch { /* Ignore */ }
+                        }
+                    });
+                }
+            }
+            catch { /* Silently ignore frame errors */ }
+        }
+
+        private static Bitmap ConvertNV12ToBitmap(byte[] nv12, int width, int height)
+        {
+            var bmp = new Bitmap(width, height, PixelFormat.Format24bppRgb);
+            var bmpData = bmp.LockBits(new Rectangle(0, 0, width, height), ImageLockMode.WriteOnly, PixelFormat.Format24bppRgb);
+
+            int ySize = width * height;
+            int stride = bmpData.Stride;
+
+            unsafe
+            {
+                byte* dst = (byte*)bmpData.Scan0;
+                for (int j = 0; j < height; j++)
+                {
+                    for (int i = 0; i < width; i++)
+                    {
+                        int yIndex = j * width + i;
+                        int uvIndex = ySize + (j / 2) * width + (i / 2) * 2;
+
+                        if (yIndex >= nv12.Length || uvIndex + 1 >= nv12.Length) continue;
+
+                        int y = nv12[yIndex];
+                        int u = nv12[uvIndex] - 128;
+                        int v = nv12[uvIndex + 1] - 128;
+
+                        int r = (int)(y + 1.402 * v);
+                        int g = (int)(y - 0.344 * u - 0.714 * v);
+                        int b = (int)(y + 1.772 * u);
+
+                        int offset = j * stride + i * 3;
+                        dst[offset] = (byte)Math.Clamp(b, 0, 255);       // B
+                        dst[offset + 1] = (byte)Math.Clamp(g, 0, 255);   // G
+                        dst[offset + 2] = (byte)Math.Clamp(r, 0, 255);   // R
+                    }
+                }
+            }
+
+            bmp.UnlockBits(bmpData);
+            return bmp;
+        }
+
+        private static Bitmap ConvertI420ToBitmap(byte[] i420, int width, int height)
+        {
+            var bmp = new Bitmap(width, height, PixelFormat.Format24bppRgb);
+            var bmpData = bmp.LockBits(new Rectangle(0, 0, width, height), ImageLockMode.WriteOnly, PixelFormat.Format24bppRgb);
+
+            int ySize = width * height;
+            int uvSize = ySize / 4;
+            int stride = bmpData.Stride;
+
+            unsafe
+            {
+                byte* dst = (byte*)bmpData.Scan0;
+                for (int j = 0; j < height; j++)
+                {
+                    for (int i = 0; i < width; i++)
+                    {
+                        int yIndex = j * width + i;
+                        int uIndex = ySize + (j / 2) * (width / 2) + (i / 2);
+                        int vIndex = ySize + uvSize + (j / 2) * (width / 2) + (i / 2);
+
+                        if (yIndex >= i420.Length || uIndex >= i420.Length || vIndex >= i420.Length) continue;
+
+                        int y = i420[yIndex];
+                        int u = i420[uIndex] - 128;
+                        int v = i420[vIndex] - 128;
+
+                        int r = (int)(y + 1.402 * v);
+                        int g = (int)(y - 0.344 * u - 0.714 * v);
+                        int b = (int)(y + 1.772 * u);
+
+                        int offset = j * stride + i * 3;
+                        dst[offset] = (byte)Math.Clamp(b, 0, 255);
+                        dst[offset + 1] = (byte)Math.Clamp(g, 0, 255);
+                        dst[offset + 2] = (byte)Math.Clamp(r, 0, 255);
+                    }
+                }
+            }
+
+            bmp.UnlockBits(bmpData);
+            return bmp;
         }
 
         private void StopCamera()
         {
-            try
+            if (videoEndPoint != null)
             {
-                if (videoSource != null && videoSource.IsRunning)
-                {
-                    videoSource.SignalToStop();
-                    videoSource.WaitForStop();
-                    videoSource.NewFrame -= VideoSource_NewFrame;
-                    videoSource = null;
-                }
-
-                isCameraRunning = false;
-
-                // PictureBox'ý temizle
-                pictureBoxLocalVideo.Image = null;
-                pictureBoxLocalVideo.BackColor = Color.Black;
-
-                // UI güncellemesi
-                lblLocalVideo.Text = "Your Video: OFF";
-                lblLocalVideo.ForeColor = Color.Red;
-
-                LogMessage("Camera stopped");
+                videoEndPoint.OnVideoSourceRawSample -= OnLocalVideoFrame;
+                videoEndPoint.CloseVideo();
+                videoEndPoint = null;
             }
-            catch (Exception ex)
-            {
-                LogMessage($"Error stopping camera: {ex.Message}");
-            }
+            if (audioEndPoint != null) { audioEndPoint.CloseAudio(); audioEndPoint = null; }
+            this.Invoke(() => { pictureBoxLocalVideo.Image = null; lblLocalVideo.Text = "Your Video: OFF"; lblLocalVideo.ForeColor = Color.Red; });
         }
 
-        private void VideoSource_NewFrame(object sender, NewFrameEventArgs eventArgs)
-        {
-            try
-            {
-                // Frame'i PictureBox'a aktar
-                if (pictureBoxLocalVideo.InvokeRequired)
-                {
-                    pictureBoxLocalVideo.Invoke(new Action(() =>
-                    {
-                        var bitmap = (Bitmap)eventArgs.Frame.Clone();
-                        var oldImage = pictureBoxLocalVideo.Image;
-                        pictureBoxLocalVideo.Image = bitmap;
-                        oldImage?.Dispose();
-                    }));
-                }
-                else
-                {
-                    var bitmap = (Bitmap)eventArgs.Frame.Clone();
-                    var oldImage = pictureBoxLocalVideo.Image;
-                    pictureBoxLocalVideo.Image = bitmap;
-                    oldImage?.Dispose();
-                }
-            }
-            catch (Exception ex)
-            {
-                LogMessage($"Error processing video frame: {ex.Message}");
-            }
-        }
 
+        // â”€â”€â”€ SignalR Connection â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         private async void btnConnect_Click(object sender, EventArgs e)
         {
-            if (string.IsNullOrWhiteSpace(txtRoomId.Text) ||
-                string.IsNullOrWhiteSpace(txtUserName.Text) ||
-                string.IsNullOrWhiteSpace(txtServerUrl.Text))
-            {
-                MessageBox.Show("Please enter Server URL, Room ID and User Name!", "Missing Information",
-                               MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                return;
-            }
-
+            currentRoomId = txtRoomId.Text.Trim();
+            currentUserName = txtUserName.Text.Trim();
+            if (string.IsNullOrEmpty(currentRoomId) || string.IsNullOrEmpty(currentUserName)) return;
             try
             {
-                btnConnect.Enabled = false;
-                lblStatus.Text = "Connecting...";
-                lblStatus.ForeColor = Color.Orange;
-
-                LogMessage("Attempting to connect...");
-
-                // SignalR baðlantýsýný oluþtur
-                string serverUrl = txtServerUrl.Text.TrimEnd('/');
                 hubConnection = new HubConnectionBuilder()
-                    .WithUrl($"{serverUrl}/webrtchub")
+                    .WithUrl($"{txtServerUrl.Text.Trim()}/webrtchub")
                     .WithAutomaticReconnect()
                     .Build();
-
-                // Event handler'larý ekle
                 SetupSignalRHandlers();
-
-                // Baðlantýyý baþlat
                 await hubConnection.StartAsync();
-
-                currentRoomId = txtRoomId.Text.Trim();
-                currentUserName = txtUserName.Text.Trim();
-
-                // Odaya katýl
                 await hubConnection.InvokeAsync("JoinRoom", currentRoomId, currentUserName, "WindowsClient");
-
-                // UI'ý güncelle
                 UpdateUIForConnected();
-                LogMessage($"Connected to room: {currentRoomId} as {currentUserName}");
-
-                // Connection timer'ý baþlat
                 connectionTimer.Start();
-
+                LogMessage($"Joined room: {currentRoomId}");
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Connection failed: {ex.Message}", "Connection Error",
-                               MessageBoxButtons.OK, MessageBoxIcon.Error);
-                LogMessage($"Connection error: {ex.Message}");
-                UpdateUIForDisconnected();
+                LogMessage($"Connection failed: {ex.Message}");
+                if (ex.InnerException != null) LogMessage($"  Inner: {ex.InnerException.Message}");
             }
         }
 
         private void SetupSignalRHandlers()
         {
-            if (hubConnection == null) return;
-
-            // Baðlantý durumu deðiþiklikleri
-            hubConnection.Closed += async (error) =>
+            hubConnection?.On<string, string, string>("UserJoined", (userName, type, id) =>
             {
-                this.Invoke(() =>
-                {
-                    LogMessage("Connection closed");
-                    if (error != null)
-                    {
-                        LogMessage($"Connection error: {error.Message}");
-                    }
-                    UpdateUIForDisconnected();
-                });
-            };
-
-            hubConnection.Reconnecting += (error) =>
-            {
-                this.Invoke(() =>
-                {
-                    LogMessage("Attempting to reconnect...");
-                    lblStatus.Text = "Reconnecting...";
-                    lblStatus.ForeColor = Color.Orange;
-                });
-                return Task.CompletedTask;
-            };
-
-            hubConnection.Reconnected += (connectionId) =>
-            {
-                this.Invoke(() =>
-                {
-                    LogMessage($"Reconnected with ID: {connectionId}");
-                    UpdateUIForConnected();
-                });
-                return Task.CompletedTask;
-            };
-
-            // Yeni kullanýcý katýldýðýnda
-            hubConnection.On<string, string, string>("UserJoined", (userName, userType, connectionId) =>
-            {
-                this.Invoke(() =>
-                {
-                    connectedUsers[connectionId] = userName;
-                    AddMessage($"[SYSTEM] {userName} ({userType}) joined the room");
-                    LogMessage($"User joined: {userName} ({userType}) - {connectionId}");
-                    UpdateConnectionCount();
-
-                    // Video butonlarýný etkinleþtir (eðer baðlantý varsa)
-                    if (connectedUsers.Count > 0)
-                    {
-                        btnStartVideo.Enabled = true;
-                    }
-                });
+                connectedUsers[id] = userName;
+                LogMessage($"User joined: {userName} ({type})");
+                AddMessage($"[System] {userName} joined the room.");
+                UpdateVideoButtons();
             });
-
-            // Kullanýcý ayrýldýðýnda
-            hubConnection.On<string>("UserDisconnected", (connectionId) =>
+            hubConnection?.On<string>("UserDisconnected", (id) =>
             {
-                this.Invoke(() =>
-                {
-                    if (connectedUsers.ContainsKey(connectionId))
-                    {
-                        string userName = connectedUsers[connectionId];
-                        connectedUsers.Remove(connectionId);
-                        AddMessage($"[SYSTEM] {userName} left the room");
-                        LogMessage($"User disconnected: {userName}");
-                        UpdateConnectionCount();
-
-                        // Eðer kimse kalmadýysa video butonunu devre dýþý býrak
-                        if (connectedUsers.Count == 0)
-                        {
-                            btnStartVideo.Enabled = false;
-                            if (isVideoCallActive)
-                            {
-                                btnStopVideo_Click(null, null);
-                            }
-                        }
-                    }
-                });
+                if (connectedUsers.TryGetValue(id, out var name)) LogMessage($"User disconnected: {name}");
+                connectedUsers.Remove(id);
+                CleanupPeerConnection();
+                UpdateVideoButtons();
             });
-
-            // Oda kullanýcýlarý listesi alýndýðýnda
-            hubConnection.On<Dictionary<string, string>>("RoomUsers", (users) =>
+            hubConnection?.On<string, string>("UserLeft", (userName, id) =>
             {
-                this.Invoke(() =>
-                {
-                    connectedUsers = users;
-                    LogMessage($"Room users updated: {users.Count} users");
-                    UpdateConnectionCount();
-
-                    foreach (var user in users)
-                    {
-                        AddMessage($"[SYSTEM] {user.Value} is in the room");
-                    }
-                });
+                connectedUsers.Remove(id);
+                LogMessage($"User left: {userName}");
+                CleanupPeerConnection();
+                UpdateVideoButtons();
             });
-
-            // Mesaj alýndýðýnda
-            hubConnection.On<string, string, string>("ReceiveMessage", (userName, message, timestamp) =>
+            hubConnection?.On<string, string, string>("ReceiveMessage", (user, msg, time) =>
             {
-                this.Invoke(() =>
-                {
-                    AddMessage($"[{timestamp}] {userName}: {message}");
-                });
+                AddMessage($"[{time}] {user}: {msg}");
             });
-
-            // WebRTC Offer alýndýðýnda
-            hubConnection.On<string, string>("ReceiveOffer", (offer, fromConnectionId) =>
-            {
-                this.Invoke(() =>
-                {
-                    string fromUser = connectedUsers.ContainsKey(fromConnectionId) ?
-                                     connectedUsers[fromConnectionId] : "Unknown";
-                    LogMessage($"Received WebRTC Offer from: {fromUser}");
-                    HandleWebRTCOffer(offer, fromConnectionId);
-                });
-            });
-
-            // WebRTC Answer alýndýðýnda
-            hubConnection.On<string, string>("ReceiveAnswer", (answer, fromConnectionId) =>
-            {
-                this.Invoke(() =>
-                {
-                    string fromUser = connectedUsers.ContainsKey(fromConnectionId) ?
-                                     connectedUsers[fromConnectionId] : "Unknown";
-                    LogMessage($"Received WebRTC Answer from: {fromUser}");
-                    HandleWebRTCAnswer(answer, fromConnectionId);
-                });
-            });
-
-            // ICE Candidate alýndýðýnda
-            hubConnection.On<string, string>("ReceiveIceCandidate", (candidate, fromConnectionId) =>
-            {
-                this.Invoke(() =>
-                {
-                    string fromUser = connectedUsers.ContainsKey(fromConnectionId) ?
-                                     connectedUsers[fromConnectionId] : "Unknown";
-                    LogMessage($"Received ICE Candidate from: {fromUser}");
-                    HandleIceCandidate(candidate, fromConnectionId);
-                });
-            });
-
-            // Video frame alýndýðýnda
-            hubConnection.On<string, string>("ReceiveVideoFrame", (frameData, fromConnectionId) =>
-            {
-                this.Invoke(() =>
-                {
-                    HandleVideoFrame(frameData, fromConnectionId);
-                });
-            });
-
-            // Video call durdurulduðunda
-            hubConnection.On("VideoCallStopped", () =>
-            {
-                this.Invoke(() =>
-                {
-                    AddMessage("[SYSTEM] Video call has been stopped");
-                    lblRemoteVideo.Text = "Remote Video: OFF";
-                    lblRemoteVideo.ForeColor = Color.Red;
-                    pictureBoxRemoteVideo.Image = null;
-                    pictureBoxRemoteVideo.BackColor = Color.Black;
-                });
-            });
-
-            // Hata mesajlarý
-            hubConnection.On<string>("Error", (errorMessage) =>
-            {
-                this.Invoke(() =>
-                {
-                    LogMessage($"Server error: {errorMessage}");
-                    MessageBox.Show($"Server error: {errorMessage}", "Server Error",
-                                   MessageBoxButtons.OK, MessageBoxIcon.Error);
-                });
-            });
+            hubConnection?.On<string, string>("ReceiveOffer", async (sdp, id) => await HandleOffer(sdp, id));
+            hubConnection?.On<string, string>("ReceiveAnswer", async (sdp, id) => await HandleAnswer(sdp, id));
+            hubConnection?.On<string, string>("ReceiveIceCandidate", async (c, id) => await HandleIceCandidate(c, id));
         }
 
-        private void HandleVideoFrame(string frameData, string fromConnectionId)
+        private void UpdateVideoButtons()
         {
-            try
+            this.Invoke(() =>
             {
-                // Base64 encoded frame data'yý decode et ve göster
-                byte[] imageBytes = Convert.FromBase64String(frameData);
-                using (var ms = new MemoryStream(imageBytes))
-                {
-                    var image = Image.FromStream(ms);
-                    var oldImage = pictureBoxRemoteVideo.Image;
-                    pictureBoxRemoteVideo.Image = image;
-                    oldImage?.Dispose();
-
-                    lblRemoteVideo.Text = "Remote Video: ON";
-                    lblRemoteVideo.ForeColor = Color.Green;
-                }
-            }
-            catch (Exception ex)
-            {
-                LogMessage($"Error processing video frame: {ex.Message}");
-            }
+                btnStartVideo.Enabled = hubConnection?.State == HubConnectionState.Connected
+                    && connectedUsers.Count > 0 && !isVideoCallActive;
+            });
         }
 
-        private void UpdateConnectionCount()
-        {
-            lblConnectionCount.Text = $"Users: {connectedUsers.Count}";
-        }
-
-        private async void HandleWebRTCOffer(string offer, string fromConnectionId)
-        {
-            try
-            {
-                LogMessage("Processing WebRTC Offer...");
-
-                // Gerçek WebRTC kütüphanesi kullanýlacaksa buraya implementasyon gelecek
-                // Þimdilik demo answer oluþtur
-                var answerData = new
-                {
-                    type = "answer",
-                    sdp = $"demo-answer-sdp-{DateTime.Now.Ticks}",
-                    timestamp = DateTime.UtcNow.ToString("O")
-                };
-
-                var demoAnswer = JsonSerializer.Serialize(answerData);
-
-                await hubConnection.InvokeAsync("SendAnswer", currentRoomId, fromConnectionId, demoAnswer);
-                LogMessage("Answer sent successfully");
-            }
-            catch (Exception ex)
-            {
-                LogMessage($"Error processing WebRTC Offer: {ex.Message}");
-            }
-        }
-
-        private void HandleWebRTCAnswer(string answer, string fromConnectionId)
-        {
-            try
-            {
-                LogMessage("Processing WebRTC Answer...");
-
-                // JSON'ý parse et
-                var answerObj = JsonSerializer.Deserialize<JsonElement>(answer);
-
-                if (answerObj.TryGetProperty("type", out var typeElement) &&
-                    typeElement.GetString() == "answer")
-                {
-                    LogMessage("Valid WebRTC Answer received");
-                    // Gerçek WebRTC answer processing burada yapýlacak
-                }
-            }
-            catch (Exception ex)
-            {
-                LogMessage($"Error processing WebRTC Answer: {ex.Message}");
-            }
-        }
-
-        private void HandleIceCandidate(string candidate, string fromConnectionId)
-        {
-            try
-            {
-                LogMessage("Processing ICE Candidate...");
-
-                // JSON'ý parse et
-                var candidateObj = JsonSerializer.Deserialize<JsonElement>(candidate);
-
-                if (candidateObj.TryGetProperty("candidate", out var candidateElement))
-                {
-                    LogMessage("Valid ICE Candidate received");
-                    // Gerçek ICE candidate processing burada yapýlacak
-                }
-            }
-            catch (Exception ex)
-            {
-                LogMessage($"Error processing ICE Candidate: {ex.Message}");
-            }
-        }
-
-        private async void btnDisconnect_Click(object sender, EventArgs e)
-        {
-            try
-            {
-                connectionTimer.Stop();
-
-                // Kamerayý durdur
-                StopCamera();
-
-                if (hubConnection != null)
-                {
-                    // Odadan ayrýl
-                    if (hubConnection.State == HubConnectionState.Connected)
-                    {
-                        await hubConnection.InvokeAsync("LeaveRoom", currentRoomId);
-                    }
-
-                    await hubConnection.StopAsync();
-                    await hubConnection.DisposeAsync();
-                    hubConnection = null;
-                }
-
-                UpdateUIForDisconnected();
-                LogMessage("Disconnected from server");
-                connectedUsers.Clear();
-                isVideoCallActive = false;
-            }
-            catch (Exception ex)
-            {
-                LogMessage($"Disconnect error: {ex.Message}");
-                UpdateUIForDisconnected();
-            }
-        }
-
-        private async void btnSendMessage_Click(object sender, EventArgs e)
-        {
-            if (hubConnection?.State != HubConnectionState.Connected ||
-                string.IsNullOrWhiteSpace(txtMessageToSend.Text))
-                return;
-
-            try
-            {
-                string message = txtMessageToSend.Text.Trim();
-                string timestamp = DateTime.Now.ToString("HH:mm:ss");
-
-                await hubConnection.InvokeAsync("SendMessage", currentRoomId, currentUserName, message, timestamp);
-
-                txtMessageToSend.Clear();
-                txtMessageToSend.Focus();
-            }
-            catch (Exception ex)
-            {
-                LogMessage($"Send message error: {ex.Message}");
-            }
-        }
-
-
+        // â”€â”€â”€ WebRTC Signaling â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         private async void btnStartVideo_Click(object sender, EventArgs e)
         {
-            if (hubConnection?.State != HubConnectionState.Connected) return;
-
             try
             {
-                LogMessage("Starting video call...");
+                await StartCamera();
+                CreatePeerConnection();
+                var offerInit = peerConnection!.createOffer(null);
+                await peerConnection.setLocalDescription(offerInit);
 
-                // Kamerayý baþlat
-                StartCamera();
+                // CRITICAL: use offerInit.sdp (actual SDP text), NOT offerInit.ToString() (C# class name)
+                var offerJson = JsonSerializer.Serialize(new { type = "offer", sdp = offerInit.sdp });
+                LogMessage($"Sending offer (SDP length: {offerInit.sdp?.Length ?? 0})");
 
-                isVideoCallActive = true;
-
-                // Gerçek WebRTC offer oluþtur (demo amaçlý)
-                var offerData = new
-                {
-                    type = "offer",
-                    sdp = $"demo-offer-sdp-{DateTime.Now.Ticks}",
-                    timestamp = DateTime.UtcNow.ToString("O"),
-                    initiator = currentUserName
-                };
-
-                var demoOffer = JsonSerializer.Serialize(offerData);
-
-                // Tüm baðlý kullanýcýlara offer gönder
                 foreach (var user in connectedUsers)
                 {
-                    await hubConnection.InvokeAsync("SendOffer", currentRoomId, user.Key, demoOffer);
-                    LogMessage($"Offer sent to: {user.Value}");
+                    await hubConnection!.InvokeAsync("SendOffer", currentRoomId, user.Key, offerJson);
                 }
-
-                btnStartVideo.Enabled = false;
-                btnStopVideo.Enabled = true;
-
-                AddMessage($"[SYSTEM] {currentUserName} started a video call");
-
-                // Video frame gönderme timer'ý baþlat (demo amaçlý)
-                StartVideoFrameTimer();
+                isVideoCallActive = true;
+                this.Invoke(() => { btnStartVideo.Enabled = false; btnStopVideo.Enabled = true; });
             }
-            catch (Exception ex)
-            {
-                LogMessage($"Start video error: {ex.Message}");
-                isVideoCallActive = false;
-                StopCamera();
-            }
+            catch (Exception ex) { LogMessage($"Offer error: {ex.Message}"); CleanupPeerConnection(); }
         }
 
-        private System.Windows.Forms.Timer? videoFrameTimer;
-
-        private void StartVideoFrameTimer()
+        private void CreatePeerConnection()
         {
-            // Demo amaçlý video frame gönderme
-            videoFrameTimer = new System.Windows.Forms.Timer();
-            videoFrameTimer.Interval = 100; // 10 FPS
-            videoFrameTimer.Tick += async (s, e) =>
+            if (peerConnection != null) return;
+            peerConnection = new RTCPeerConnection(new RTCConfiguration
             {
-                try
-                {
-                    if (isCameraRunning && pictureBoxLocalVideo.Image != null)
-                    {
-                        // Görüntüyü Base64'e çevir ve gönder
-                        using (var ms = new MemoryStream())
-                        {
-                            pictureBoxLocalVideo.Image.Save(ms, System.Drawing.Imaging.ImageFormat.Jpeg);
-                            string frameData = Convert.ToBase64String(ms.ToArray());
+                iceServers = new List<RTCIceServer> { new RTCIceServer { urls = "stun:stun.l.google.com:19302" } }
+            });
 
-                            // Tüm kullanýcýlara video frame gönder
-                            foreach (var user in connectedUsers)
-                            {
-                                await hubConnection.InvokeAsync("SendVideoFrame", currentRoomId, user.Key, frameData);
-                            }
-                        }
-                    }
-                }
-                catch (Exception ex)
+            if (videoEndPoint == null)
+            {
+                videoEndPoint = new WindowsVideoEndPoint(new VpxVideoEncoder());
+                videoEndPoint.OnVideoSourceRawSample += OnLocalVideoFrame;
+                _ = videoEndPoint.StartVideo();
+            }
+            if (audioEndPoint == null)
+            {
+                audioEndPoint = new WindowsAudioEndPoint(new AudioEncoder());
+            }
+
+            peerConnection.addTrack(new MediaStreamTrack(videoEndPoint.GetVideoSourceFormats(), MediaStreamStatusEnum.SendRecv));
+            peerConnection.addTrack(new MediaStreamTrack(audioEndPoint.GetAudioSourceFormats(), MediaStreamStatusEnum.SendRecv));
+
+            videoEndPoint.OnVideoSourceEncodedSample -= peerConnection.SendVideo;
+            videoEndPoint.OnVideoSourceEncodedSample += peerConnection.SendVideo;
+            audioEndPoint.OnAudioSourceEncodedSample -= peerConnection.SendAudio;
+            audioEndPoint.OnAudioSourceEncodedSample += peerConnection.SendAudio;
+
+            // Hook up remote video decoding
+            videoEndPoint.OnVideoSinkDecodedSample -= OnRemoteVideoSample;
+            videoEndPoint.OnVideoSinkDecodedSample += OnRemoteVideoSample;
+
+            peerConnection.OnVideoFrameReceived += videoEndPoint.GotVideoFrame;
+            // peerConnection.OnAudioFrameReceived += audioEndPoint.GotAudioFrame;
+
+            peerConnection.onicecandidate += async (candidate) =>
+            {
+                var json = JsonSerializer.Serialize(new RTCIceCandidateInit
                 {
-                    LogMessage($"Error sending video frame: {ex.Message}");
+                    candidate = candidate.candidate,
+                    sdpMid = candidate.sdpMid,
+                    sdpMLineIndex = (ushort)candidate.sdpMLineIndex
+                });
+                foreach (var user in connectedUsers)
+                {
+                    await hubConnection!.InvokeAsync("SendIceCandidate", currentRoomId, user.Key, json);
                 }
             };
-            videoFrameTimer.Start();
+
+            peerConnection.OnVideoFormatsNegotiated += (f) => videoEndPoint.SetVideoSourceFormat(f.First());
+            peerConnection.OnAudioFormatsNegotiated += (f) => audioEndPoint.SetAudioSourceFormat(f.First());
+            peerConnection.onconnectionstatechange += (s) => LogMessage($"WebRTC State: {s}");
+        }
+
+        private void OnRemoteVideoSample(byte[] sample, uint width, uint height, int stride, VideoPixelFormatsEnum pixelFormat)
+        {
+            try
+            {
+                if (width <= 0 || height <= 0 || sample == null || sample.Length == 0) return;
+
+                Bitmap? bmp = null;
+                int w = (int)width;
+                int h = (int)height;
+
+                if (pixelFormat == VideoPixelFormatsEnum.Bgr || pixelFormat == VideoPixelFormatsEnum.Rgb)
+                {
+                    bmp = new Bitmap(w, h, PixelFormat.Format24bppRgb);
+                    var bmpData = bmp.LockBits(new Rectangle(0, 0, w, h), ImageLockMode.WriteOnly, PixelFormat.Format24bppRgb);
+                    int copyLen = Math.Min(sample.Length, Math.Abs(bmpData.Stride) * h);
+                    Marshal.Copy(sample, 0, bmpData.Scan0, copyLen);
+                    bmp.UnlockBits(bmpData);
+                }
+                else if (pixelFormat == VideoPixelFormatsEnum.Bgra)
+                {
+                    bmp = new Bitmap(w, h, PixelFormat.Format32bppArgb);
+                    var bmpData = bmp.LockBits(new Rectangle(0, 0, w, h), ImageLockMode.WriteOnly, PixelFormat.Format32bppArgb);
+                    int copyLen = Math.Min(sample.Length, Math.Abs(bmpData.Stride) * h);
+                    Marshal.Copy(sample, 0, bmpData.Scan0, copyLen);
+                    bmp.UnlockBits(bmpData);
+                }
+                else if (pixelFormat == VideoPixelFormatsEnum.NV12)
+                {
+                    bmp = ConvertNV12ToBitmap(sample, w, h);
+                }
+                else if (pixelFormat == VideoPixelFormatsEnum.I420)
+                {
+                    bmp = ConvertI420ToBitmap(sample, w, h);
+                }
+                else
+                {
+                    int expectedLen = w * h * 3;
+                    if (sample.Length >= expectedLen)
+                    {
+                        bmp = new Bitmap(w, h, PixelFormat.Format24bppRgb);
+                        var bmpData = bmp.LockBits(new Rectangle(0, 0, w, h), ImageLockMode.WriteOnly, PixelFormat.Format24bppRgb);
+                        Marshal.Copy(sample, 0, bmpData.Scan0, expectedLen);
+                        bmp.UnlockBits(bmpData);
+                    }
+                }
+
+                if (bmp != null)
+                {
+                    this.BeginInvoke(() =>
+                    {
+                        if (peerConnection == null) { bmp.Dispose(); return; }
+                        var old = pictureBoxRemoteVideo.Image;
+                        pictureBoxRemoteVideo.Image = bmp;
+                        old?.Dispose();
+                    });
+                }
+            }
+            catch { }
+        }
+
+        private async Task HandleOffer(string offerJsonStr, string fromId)
+        {
+            try
+            {
+                // Parse JSON: {"type":"offer","sdp":"v=0\r\n..."}
+                string sdpText = offerJsonStr;
+                try
+                {
+                    using var doc = JsonDocument.Parse(offerJsonStr);
+                    if (doc.RootElement.TryGetProperty("sdp", out var sdpProp))
+                        sdpText = sdpProp.GetString() ?? offerJsonStr;
+                }
+                catch { /* Not JSON, use as raw SDP */ }
+
+                LogMessage($"Received offer (SDP length: {sdpText.Length})");
+                await StartCamera();
+                CreatePeerConnection();
+                var result = peerConnection!.setRemoteDescription(new RTCSessionDescriptionInit
+                {
+                    type = RTCSdpType.offer,
+                    sdp = sdpText
+                });
+
+                if (result == SetDescriptionResultEnum.OK)
+                {
+                    var answerInit = peerConnection.createAnswer(null);
+                    await peerConnection.setLocalDescription(answerInit);
+                    // CRITICAL: use answerInit.sdp, NOT answerInit.ToString()
+                    var answerJson = JsonSerializer.Serialize(new { type = "answer", sdp = answerInit.sdp });
+                    await hubConnection!.InvokeAsync("SendAnswer", currentRoomId, fromId, answerJson);
+                    LogMessage($"Sent answer (SDP length: {answerInit.sdp?.Length ?? 0})");
+                    this.Invoke(() => { isVideoCallActive = true; btnStartVideo.Enabled = false; btnStopVideo.Enabled = true; });
+                }
+                else
+                {
+                    LogMessage($"SetRemoteDescription failed: {result}");
+                }
+            }
+            catch (Exception ex) { LogMessage($"HandleOffer error: {ex.Message}"); }
+        }
+
+        private async Task HandleAnswer(string answerJsonStr, string fromId)
+        {
+            try
+            {
+                string sdpText = answerJsonStr;
+                try
+                {
+                    using var doc = JsonDocument.Parse(answerJsonStr);
+                    if (doc.RootElement.TryGetProperty("sdp", out var sdpProp))
+                        sdpText = sdpProp.GetString() ?? answerJsonStr;
+                }
+                catch { }
+
+                LogMessage($"Received answer (SDP length: {sdpText.Length})");
+                peerConnection?.setRemoteDescription(new RTCSessionDescriptionInit
+                {
+                    type = RTCSdpType.answer,
+                    sdp = sdpText
+                });
+            }
+            catch (Exception ex) { LogMessage($"HandleAnswer error: {ex.Message}"); }
+        }
+
+        private async Task HandleIceCandidate(string json, string fromId)
+        {
+            try
+            {
+                var candidateInit = JsonSerializer.Deserialize<RTCIceCandidateInit>(json);
+                if (peerConnection != null && candidateInit != null)
+                    peerConnection.addIceCandidate(candidateInit);
+            }
+            catch { }
+        }
+
+        // â”€â”€â”€ Call Management â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        private void CleanupPeerConnection()
+        {
+            peerConnection?.Close("Normal closure");
+            peerConnection = null;
+            isVideoCallActive = false;
+            this.Invoke(() =>
+            {
+                UpdateVideoButtons();
+                btnStopVideo.Enabled = false;
+                pictureBoxRemoteVideo.Image = null;
+            });
         }
 
         private async void btnStopVideo_Click(object sender, EventArgs e)
         {
+            CleanupPeerConnection();
+            StopCamera();
+            if (hubConnection?.State == HubConnectionState.Connected)
+                await hubConnection.InvokeAsync("StopVideoCall", currentRoomId);
+        }
+
+        // â”€â”€â”€ Messaging â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        private async void btnSendMessage_Click(object? sender, EventArgs e)
+        {
+            if (hubConnection == null || hubConnection.State != HubConnectionState.Connected
+                || string.IsNullOrEmpty(txtMessageToSend.Text)) return;
             try
             {
-                LogMessage("Stopping video call...");
-                isVideoCallActive = false;
-
-                // Video frame timer'ý durdur
-                videoFrameTimer?.Stop();
-                videoFrameTimer?.Dispose();
-                videoFrameTimer = null;
-
-                // Kamerayý durdur
-                StopCamera();
-
-                // Video call stop mesajý gönder
-                if (hubConnection?.State == HubConnectionState.Connected)
-                {
-                    await hubConnection.InvokeAsync("StopVideoCall", currentRoomId);
-                }
-
-                btnStartVideo.Enabled = connectedUsers.Count > 0;
-                btnStopVideo.Enabled = false;
-
-                // Remote video'yu temizle
-                pictureBoxRemoteVideo.Image = null;
-                pictureBoxRemoteVideo.BackColor = Color.Black;
-                lblRemoteVideo.Text = "Remote Video: OFF";
-                lblRemoteVideo.ForeColor = Color.Red;
-
-                AddMessage($"[SYSTEM] {currentUserName} stopped the video call");
+                var msg = txtMessageToSend.Text;
+                var time = DateTime.Now.ToShortTimeString();
+                await hubConnection.InvokeAsync("SendMessage", currentRoomId, currentUserName, msg, time);
+                txtMessageToSend.Clear();
             }
-            catch (Exception ex)
-            {
-                LogMessage($"Stop video error: {ex.Message}");
-            }
+            catch (Exception ex) { LogMessage($"Send error: {ex.Message}"); }
         }
 
-        private void btnClearMessages_Click(object sender, EventArgs e)
-        {
-            txtMessages.Clear();
-            LogMessage("Chat messages cleared");
-        }
-
-        private void btnClearLog_Click(object sender, EventArgs e)
-        {
-            txtLog.Clear();
-            LogMessage("System log cleared");
-        }
+        // â”€â”€â”€ UI Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        private void btnDisconnect_Click(object sender, EventArgs e) { CleanupPeerConnection(); StopCamera(); hubConnection?.StopAsync(); UpdateUIForDisconnected(); }
+        private void btnClearMessages_Click(object sender, EventArgs e) { txtMessages.Clear(); }
+        private void btnClearLog_Click(object sender, EventArgs e) { txtLog.Clear(); }
+        private void btnRefreshCameras_Click(object sender, EventArgs e) { InitializeCameraDevices(); }
 
         private void UpdateUIForConnected()
         {
-            lblStatus.Text = "Connected";
-            lblStatus.ForeColor = Color.Green;
-            btnConnect.Enabled = false;
-            btnDisconnect.Enabled = true;
-            txtMessageToSend.Enabled = true;
-            btnSendMessage.Enabled = true;
-            txtRoomId.Enabled = false;
-            txtUserName.Enabled = false;
-            txtServerUrl.Enabled = false;
-
-            // Video butonlarý sadece baþka kullanýcýlar varsa aktif
-            btnStartVideo.Enabled = connectedUsers.Count > 0;
-            btnStopVideo.Enabled = false;
-
-            // Kamera kontrollerini etkinleþtir
-            cmbCameraDevices.Enabled = videoDevices != null && videoDevices.Count > 0;
-            btnRefreshCameras.Enabled = true;
+            this.Invoke(() =>
+            {
+                lblStatus.Text = "Connected"; lblStatus.ForeColor = Color.Green;
+                btnConnect.Enabled = false; btnDisconnect.Enabled = true;
+                txtMessageToSend.Enabled = true; btnSendMessage.Enabled = true;
+                txtRoomId.Enabled = false; txtUserName.Enabled = false; txtServerUrl.Enabled = false;
+                cmbCameraDevices.Enabled = true; btnRefreshCameras.Enabled = true;
+                UpdateVideoButtons();
+            });
         }
 
         private void UpdateUIForDisconnected()
         {
-            lblStatus.Text = "Disconnected";
-            lblStatus.ForeColor = Color.Red;
-            btnConnect.Enabled = true;
-            btnDisconnect.Enabled = false;
-            txtMessageToSend.Enabled = false;
-            btnSendMessage.Enabled = false;
-            btnStartVideo.Enabled = false;
-            btnStopVideo.Enabled = false;
-            txtRoomId.Enabled = true;
-            txtUserName.Enabled = true;
-            txtServerUrl.Enabled = true;
-            lblConnectionCount.Text = "Users: 0";
-
-            // Video label'larýný sýfýrla
-            lblLocalVideo.Text = "Your Video: OFF";
-            lblLocalVideo.ForeColor = Color.Red;
-            lblRemoteVideo.Text = "Remote Video: OFF";
-            lblRemoteVideo.ForeColor = Color.Red;
+            this.Invoke(() =>
+            {
+                lblStatus.Text = "Disconnected"; lblStatus.ForeColor = Color.Red;
+                btnConnect.Enabled = true; btnDisconnect.Enabled = false;
+                txtMessageToSend.Enabled = false; btnSendMessage.Enabled = false;
+                btnStartVideo.Enabled = false; btnStopVideo.Enabled = false;
+                txtRoomId.Enabled = true; txtUserName.Enabled = true; txtServerUrl.Enabled = true;
+            });
         }
 
-        private void AddMessage(string message)
+        private void AddMessage(string m) { this.Invoke(() => txtMessages.AppendText(m + Environment.NewLine)); }
+        private void LogMessage(string m) { this.Invoke(() => txtLog.AppendText($"[{DateTime.Now:HH:mm:ss}] {m}{Environment.NewLine}")); }
+
+        protected override void OnFormClosing(FormClosingEventArgs e)
         {
-            if (txtMessages.InvokeRequired)
-            {
-                txtMessages.Invoke(new Action(() => AddMessage(message)));
-                return;
-            }
-
-            txtMessages.AppendText(message + Environment.NewLine);
-            txtMessages.SelectionStart = txtMessages.Text.Length;
-            txtMessages.ScrollToCaret();
-        }
-
-        private void LogMessage(string message)
-        {
-            if (txtLog.InvokeRequired)
-            {
-                txtLog.Invoke(new Action(() => LogMessage(message)));
-                return;
-            }
-
-            string logEntry = $"[{DateTime.Now:HH:mm:ss}] {message}";
-            txtLog.AppendText(logEntry + Environment.NewLine);
-            txtLog.SelectionStart = txtLog.Text.Length;
-            txtLog.ScrollToCaret();
-        }
-
-        protected override async void OnFormClosing(FormClosingEventArgs e)
-        {
-            try
-            {
-                connectionTimer?.Stop();
-                connectionTimer?.Dispose();
-
-                // Video frame timer'ý durdur
-                videoFrameTimer?.Stop();
-                videoFrameTimer?.Dispose();
-
-                // Kamerayý durdur
-                StopCamera();
-
-                if (hubConnection != null)
-                {
-                    if (hubConnection.State == HubConnectionState.Connected)
-                    {
-                        await hubConnection.InvokeAsync("LeaveRoom", currentRoomId);
-                    }
-                    await hubConnection.StopAsync();
-                    await hubConnection.DisposeAsync();
-                }
-            }
-            catch (Exception ex)
-            {
-                // Form kapanýrken hata olsa bile devam et
-                System.Diagnostics.Debug.WriteLine($"Error during form closing: {ex.Message}");
-            }
-
+            CleanupPeerConnection();
+            StopCamera();
             base.OnFormClosing(e);
         }
     }

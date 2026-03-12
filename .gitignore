@@ -51,3 +51,8 @@ $RECYCLE.BIN/
 
 # macOS
 .DS_Store
+
+# Build logs
+*_build*.txt
+*_errors.txt
+clean_errors.txt

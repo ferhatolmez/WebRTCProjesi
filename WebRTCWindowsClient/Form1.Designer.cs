@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Drawing;
 using System.Windows.Forms;
 
@@ -98,7 +98,7 @@ namespace WebRTCWindowsClient
             this.txtServerUrl.Name = "txtServerUrl";
             this.txtServerUrl.Size = new System.Drawing.Size(200, 23);
             this.txtServerUrl.TabIndex = 1;
-            this.txtServerUrl.Text = "http://localhost:5000";
+            this.txtServerUrl.Text = "http://localhost:5050";
 
             // lblRoomId
             this.lblRoomId.AutoSize = true;
