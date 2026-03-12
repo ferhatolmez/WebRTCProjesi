@@ -109,4 +109,4 @@ Tarayıcınızda `http://localhost:5050` adresini açın.
 
 ---
 
-*Profesyonel standartlarla görsel mükemmellik bir arada.*
+*geliştirici: ferhat ölmez.*
