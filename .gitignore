@@ -1,0 +1,53 @@
+## [Standard .NET .gitignore]
+# Build results
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+
+# IDE files
+.vs/
+.vscode/
+*.user
+*.userosscache
+*.sln.docstates
+
+# NuGet Packages
+*.nupkg
+# The packages folder can be ignored because of Package Restore
+**/[Pp]ackage[Ss]/
+# except build/, which is used as an MSBuild target.
+!**/[Pp]ackage[Ss]/build/
+# Uncomment if using NuGet 2.x
+# **/packages/
+
+# User-specific files
+*.rsuser
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# User-specific files (MonoDevelop/Xamarin Studio)
+*.userprefs
+
+# Mono auto generated files
+mono_crash.*
+
+# Windows image-cache files
+Thumbs.db
+ehthumbs.db
+
+# Folder config file
+Desktop.ini
+
+# Recycle Bin used on file shares
+$RECYCLE.BIN/
+
+# VS Code
+.vscode/
+
+# Rider
+.idea/
+
+# macOS
+.DS_Store
