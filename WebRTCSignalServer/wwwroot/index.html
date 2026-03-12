@@ -1050,7 +1050,14 @@
                     remoteStream = new MediaStream();
                     el.remoteVideo.srcObject = remoteStream;
                 }
-                event.streams[0].getTracks().forEach(track => remoteStream.addTrack(track));
+                
+                // Add tracks regardless of whether they arrived inside a MediaStream or as discrete tracks 
+                if (event.streams && event.streams.length > 0) {
+                    event.streams[0].getTracks().forEach(track => remoteStream.addTrack(track));
+                } else {
+                    remoteStream.addTrack(event.track);
+                }
+
                 el.remoteVideo.style.display = "block";
                 el.remoteImage.style.display = "none";
                 el.emptyVideoState.style.display = "none";

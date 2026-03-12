@@ -105,7 +105,7 @@ namespace WebRTCWindowsClient
             {
                 // Throttle to ~15 fps for UI performance
                 var now = DateTime.UtcNow;
-                if ((now - lastFrameTime).TotalMilliseconds < 66) return;
+                if ((now - lastFrameTime).TotalMilliseconds < 50) return; // ~20 fps
                 lastFrameTime = now;
 
                 if (!firstFrameLogged)
@@ -166,23 +166,26 @@ namespace WebRTCWindowsClient
                         var old = pictureBoxLocalVideo.Image;
                         pictureBoxLocalVideo.Image = bmp;
                         old?.Dispose();
-                        
-                        // Send fallback base64 frame if in active call
+
+                        // Send optimized Base64 frame to web clients via SignalR
+                        // (SIPSorcery VP8 encoder output is not compatible with Chrome's decoder,
+                        //  so we use this as the reliable Windows→Browser video transport)
                         if (isVideoCallActive && hubConnection?.State == HubConnectionState.Connected)
                         {
                             try
                             {
-                                if (bmp != null)
-                                {
-                                    using var ms = new MemoryStream();
-                                    // Throttle quality for performance
-                                    bmp.Save(ms, ImageFormat.Jpeg);
-                                    string base64 = Convert.ToBase64String(ms.ToArray());
-                                    // Fire and forget
-                                    _ = hubConnection.InvokeAsync("SendVideoFrame", currentRoomId, hubConnection.ConnectionId, base64);
-                                }
+                                using var ms = new MemoryStream();
+                                // Use 60% JPEG quality for good balance of quality vs bandwidth
+                                var jpegEncoder = System.Drawing.Imaging.ImageCodecInfo.GetImageEncoders()
+                                    .First(c => c.FormatID == ImageFormat.Jpeg.Guid);
+                                var encoderParams = new System.Drawing.Imaging.EncoderParameters(1);
+                                encoderParams.Param[0] = new System.Drawing.Imaging.EncoderParameter(
+                                    System.Drawing.Imaging.Encoder.Quality, 60L);
+                                bmp.Save(ms, jpegEncoder, encoderParams);
+                                string base64 = Convert.ToBase64String(ms.ToArray());
+                                _ = hubConnection.InvokeAsync("SendVideoFrame", currentRoomId, hubConnection.ConnectionId, base64);
                             }
-                            catch { /* Ignore */ }
+                            catch { /* Ignore send errors */ }
                         }
                     });
                 }
