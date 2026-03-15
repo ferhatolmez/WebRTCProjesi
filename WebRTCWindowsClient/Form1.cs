@@ -21,6 +21,7 @@ namespace WebRTCWindowsClient
         private RTCPeerConnection? peerConnection;
         private WindowsVideoEndPoint? videoEndPoint;
         private WindowsAudioEndPoint? audioEndPoint;
+        private WindowsVideoEndPoint? remoteVideoEndPoint;
         private bool isVideoCallActive = false;
         private System.Windows.Forms.Timer connectionTimer;
         private DateTime lastFrameTime = DateTime.MinValue;
@@ -82,7 +83,7 @@ namespace WebRTCWindowsClient
         {
             try
             {
-                if (videoEndPoint != null) { await videoEndPoint.CloseVideo(); videoEndPoint = null; }
+                if (videoEndPoint != null) return; // Prevent re-starting if already active
 
                 videoEndPoint = new WindowsVideoEndPoint(new VpxVideoEncoder());
                 firstFrameLogged = false;
@@ -407,21 +408,17 @@ namespace WebRTCWindowsClient
             audioEndPoint.OnAudioSourceEncodedSample -= peerConnection.SendAudio;
             audioEndPoint.OnAudioSourceEncodedSample += peerConnection.SendAudio;
 
-            // Hook up remote video decoding
-            videoEndPoint.OnVideoSinkDecodedSample -= OnRemoteVideoSample;
-            videoEndPoint.OnVideoSinkDecodedSample += OnRemoteVideoSample;
+            // Dedicated remote video decoder (independent of local camera)
+            remoteVideoEndPoint = new WindowsVideoEndPoint(new VpxVideoEncoder());
+            remoteVideoEndPoint.OnVideoSinkDecodedSample += OnRemoteVideoSample;
 
-            bool firstRemoteEncodedLogged = false;
             peerConnection.OnVideoFrameReceived += (remoteEP, timestamp, payload, format) =>
             {
-                if (!firstRemoteEncodedLogged)
+                if (format.Codec == VideoCodecsEnum.VP8)
                 {
-                    firstRemoteEncodedLogged = true;
-                    LogMessage($"First remote encoded frame rx: {payload.Length} bytes, format={format.Codec}");
+                    remoteVideoEndPoint.GotVideoFrame(remoteEP, timestamp, payload, format);
                 }
-                videoEndPoint.GotVideoFrame(remoteEP, timestamp, payload, format);
             };
-            // peerConnection.OnAudioFrameReceived += audioEndPoint.GotAudioFrame;
 
             peerConnection.onicecandidate += async (candidate) =>
             {
@@ -510,6 +507,8 @@ namespace WebRTCWindowsClient
 
         private async Task HandleOffer(string offerJsonStr, string fromId)
         {
+            if (isVideoCallActive && peerConnection != null) return; // Ignore second offer if call is active
+
             try
             {
                 // Parse JSON: {"type":"offer","sdp":"v=0\r\n..."}
@@ -586,9 +585,15 @@ namespace WebRTCWindowsClient
         // ─── Call Management ─────────────────────────────────────────
         private void CleanupPeerConnection()
         {
+            if (remoteVideoEndPoint != null)
+            {
+                remoteVideoEndPoint.OnVideoSinkDecodedSample -= OnRemoteVideoSample;
+                remoteVideoEndPoint = null;
+            }
             peerConnection?.Close("Normal closure");
             peerConnection = null;
             isVideoCallActive = false;
+            firstRemoteDataLogged = false;
             this.Invoke(() =>
             {
                 UpdateVideoButtons();
