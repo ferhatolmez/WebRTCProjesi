@@ -85,7 +85,9 @@ WebRTCProjesi/
 │   ├── Properties/
 │   │   └── launchSettings.json   # Sunucu başlatma ayarları (port 5050)
 │   ├── wwwroot/
-│   │   └── index.html            # Web Client SPA (glassmorphic UI)
+│   │   ├── index.html            # Web Client SPA (glassmorphic UI)
+│   │   ├── css/                  # Ayrıştırılmış stil dosyaları
+│   │   └── js/                   # Modüler JavaScript kodları
 │   └── appsettings.json
 ├── WebRTCWindowsClient/          # WinForms + SIPSorcery Desktop Client
 │   ├── Form1.cs                  # Ana form: kamera, WebRTC, Base64 fallback
