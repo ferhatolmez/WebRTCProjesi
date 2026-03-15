@@ -70,7 +70,8 @@ Console.WriteLine("║   ❤️  Health:      /health                    ║");
 Console.WriteLine("║   📊 Stats:       /api/stats                 ║");
 Console.WriteLine("╚══════════════════════════════════════════════╝");
 
-app.Run("http://localhost:5050");
+var port = Environment.GetEnvironmentVariable("PORT") ?? "5050";
+app.Run($"http://0.0.0.0:{port}");
 
 /// <summary>
 /// WebRTC Sinyal Sunucusu Hub'ı - Thread-safe implementasyon
