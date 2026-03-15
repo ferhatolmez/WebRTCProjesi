@@ -25,6 +25,7 @@ namespace WebRTCWindowsClient
         private System.Windows.Forms.Timer connectionTimer;
         private DateTime lastFrameTime = DateTime.MinValue;
         private bool firstFrameLogged = false;
+        private bool firstRemoteDataLogged = false;
 
         public Form1()
         {
@@ -410,7 +411,16 @@ namespace WebRTCWindowsClient
             videoEndPoint.OnVideoSinkDecodedSample -= OnRemoteVideoSample;
             videoEndPoint.OnVideoSinkDecodedSample += OnRemoteVideoSample;
 
-            peerConnection.OnVideoFrameReceived += videoEndPoint.GotVideoFrame;
+            bool firstRemoteEncodedLogged = false;
+            peerConnection.OnVideoFrameReceived += (remoteEP, timestamp, payload, format) =>
+            {
+                if (!firstRemoteEncodedLogged)
+                {
+                    firstRemoteEncodedLogged = true;
+                    LogMessage($"First remote encoded frame rx: {payload.Length} bytes, format={format.Codec}");
+                }
+                videoEndPoint.GotVideoFrame(remoteEP, timestamp, payload, format);
+            };
             // peerConnection.OnAudioFrameReceived += audioEndPoint.GotAudioFrame;
 
             peerConnection.onicecandidate += async (candidate) =>
@@ -437,6 +447,12 @@ namespace WebRTCWindowsClient
             try
             {
                 if (width <= 0 || height <= 0 || sample == null || sample.Length == 0) return;
+
+                if (!firstRemoteDataLogged)
+                {
+                    firstRemoteDataLogged = true;
+                    this.BeginInvoke(() => LogMessage($"First decoded remote frame: {width}x{height}, Format={pixelFormat}"));
+                }
 
                 Bitmap? bmp = null;
                 int w = (int)width;
