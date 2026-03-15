@@ -5,8 +5,9 @@
                 return;
             }
             try {
+                let hubUrl = window.location.protocol + "//" + window.location.host + "/webrtchub";
                 connection = new signalR.HubConnectionBuilder()
-                    .withUrl("http://localhost:5050/webrtchub")
+                    .withUrl(hubUrl)
                     .withAutomaticReconnect([0, 2000, 5000, 10000, 30000])
                     .configureLogging(signalR.LogLevel.Warning)
                     .build();
