@@ -71,7 +71,7 @@ namespace WebRTCWindowsClient
             {
                 if (ev.KeyChar == (char)Keys.Enter) { btnSendMessage_Click(s, ev); ev.Handled = true; }
             };
-            if (string.IsNullOrEmpty(txtServerUrl.Text)) { txtServerUrl.Text = "http://localhost:5050"; }
+            if (string.IsNullOrEmpty(txtServerUrl.Text)) { txtServerUrl.Text = "https://webrtcprojesi.onrender.com"; }
             if (string.IsNullOrEmpty(txtRoomId.Text)) { txtRoomId.Text = "room1"; }
             LogMessage("Application started (Professional WebRTC)");
         }
