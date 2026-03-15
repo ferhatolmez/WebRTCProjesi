@@ -98,7 +98,7 @@ namespace WebRTCWindowsClient
             this.txtServerUrl.Name = "txtServerUrl";
             this.txtServerUrl.Size = new System.Drawing.Size(200, 23);
             this.txtServerUrl.TabIndex = 1;
-            this.txtServerUrl.Text = "http://localhost:5050";
+            this.txtServerUrl.Text = "https://webrtcprojesi.onrender.com";
 
             // lblRoomId
             this.lblRoomId.AutoSize = true;
