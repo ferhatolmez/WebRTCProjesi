@@ -107,18 +107,23 @@ WebRTCProjesi/
 - Visual Studio 2022+ (Windows Client için)
 - Webcam ve mikrofon (video görüşme için)
 
-### 1. Sinyal Sunucusunu Başlat
+### 1. Web Client'a Bağlan (Canlı Sürüm)
+Projenin tarayıcı sürümü şu adreste canlı yayındadır:  
+👉 **[https://webrtcprojesi.onrender.com/index.html](https://webrtcprojesi.onrender.com/index.html)**  
+Oda ID ve kullanıcı adı girerek hemen test etmeye başlayabilirsiniz.
+
+### 2. Web Client'a Bağlan
+### 2. Windows Client'ı İndir ve Çalıştır
+Proje dosyaları arasındaki `WebRTCWindowsClient_Release.zip` dosyasını bilgisayarınıza indirin ve klasöre çıkarın.
+İçindeki `WebRTCWindowsClient.exe` dosyasına çift tıklayarak uygulamayı başlatın.
+Varsayılan olarak canlı sunucuya ayarlanmıştır. Odanızı ve isminizi seçip hemen bağlanabilirsiniz.
+
+### 3. Geliştirici Olarak Kendi Bilgisayarınızda (Lokal) Çalıştırma
 ```bash
 cd WebRTCSignalServer
 dotnet run
 ```
-Sunucu `http://localhost:5050` adresinde çalışmaya başlar.
-
-### 2. Web Client'a Bağlan
-Tarayıcınızda `http://localhost:5050` adresini açın.  
-Oda ID ve kullanıcı adı girerek bağlanın.
-
-### 3. Windows Client'ı Başlat (İsteğe Bağlı)
+Ardından Windows Client için:
 ```bash
 cd WebRTCWindowsClient
 dotnet run
