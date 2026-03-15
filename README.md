@@ -11,6 +11,30 @@ Modern glassmorphic Web Client ile standartlara uyumlu Windows C# Desktop Client
 
 ---
 
+---
+
+## 🚀 Hızlı Başlangıç (Nasıl Kullanılır?)
+
+Projeyi hemen test etmek için aşağıdaki adımları izleyebilirsiniz:
+
+### 1. Web Üzerinden Bağlan (Canlı Demo)
+Herhangi bir kurulum yapmadan doğrudan tarayıcınızdan giriş yapabilirsiniz:  
+👉 **[WebRTC Pro Canlı Demo](https://webrtcprojesi.onrender.com)**
+
+*   Bir **Oda ID** (örneğin: `oda1`) ve **Kullanıcı Adı** girip "Bağlan" deyin.
+*   "Görüşmeyi Başlat" butonu ile kameranızı aktif edin.
+
+### 2. Windows Uygulamasını İndir (Masaüstü)
+Tarayıcı ile Windows uygulaması arasında görüşmek için masaüstü istemcisini indirin:  
+👉 **[WebRTCWindowsClient_Release.zip İndir](https://github.com/ferhatolmez/WebRTCProjesi/blob/master/WebRTCWindowsClient_Release.zip)**
+
+*   Zipli dosyayı indirin ve klasöre çıkarın.
+*   `WebRTCWindowsClient.exe` dosyasını çalıştırın.
+*   Tarayıcıdakiyle **aynı Oda ID**'yi yazarak "Connect" butonuna basın.
+*   "Start Video Call" diyerek çapraz platform video görüşmesini başlatın!
+
+---
+
 ## ✨ Özellikler
 
 ### 🌐 Web Client (Tarayıcı)
@@ -19,57 +43,34 @@ Modern glassmorphic Web Client ile standartlara uyumlu Windows C# Desktop Client
 | **Glassmorphic UI** | Dark/Light tema, cam efekti, mikro-animasyonlar |
 | **Gerçek Zamanlı Video** | Tarayıcı WebRTC API ile düşük gecikme |
 | **Ekran Paylaşımı** | Doğrudan tarayıcıdan masaüstü paylaşımı |
-| **Katılımcı Listesi** | Odadaki tüm kullanıcıları canlı takip |
 | **Sohbet Sistemi** | Anlık mesajlaşma, XSS korumalı |
-| **Bildirim Sesleri** | Yeni katılımcı ve mesaj bildirimleri |
-| **Otomatik Yeniden Bağlanma** | Bağlantı koptuğunda otomatik recovery |
 | **Tam Responsive** | Mobil, tablet ve masaüstü uyumlu |
 
 ### 🖥️ Windows Client (SIPSorcery)
 | Özellik | Açıklama |
 |---------|----------|
 | **WebRTC P2P** | SDP Offer/Answer ve ICE candidate standartları |
-| **VP8 Video Codec** | SIPSorcery VpxVideoEncoder ile video kodlama |
-| **Opus Ses Codec** | Düşük gecikmeli ses kodlama |
-| **Lokal Video Önizleme** | Kamera görüntüsünü anında önizleme (PictureBox) |
-| **Uzak Video Görüntüleme** | Karşı tarafın görüntüsünü decode edip gösterme |
-| **Optimize Base64 Fallback** | Chrome uyumsuzluk durumunda SignalR üzerinden ~20 FPS, %60 JPEG kalitesinde akış |
-| **Otomatik Yeniden Bağlanma** | Bağlantı kaybında otomatik recovery |
-
-### ⚡ Sinyal Sunucusu (ASP.NET Core)
-| Özellik | Açıklama |
-|---------|----------|
-| **Thread-Safe Hub** | `ConcurrentDictionary` ile eşzamanlılık güvenliği |
-| **SignalR Core** | Gerçek zamanlı çift yönlü WebSocket iletişim |
-| **Health Check** | `/health` ve `/api/stats` endpoint'leri |
-| **Oda Yönetimi** | Çoklu oda desteği, katılma/ayrılma yönetimi |
-| **Video Frame Relay** | Windows → Tarayıcı Base64 frame aktarımı |
+| **VP8 Video Codec** | Karşı tarafın görüntüsünü decode edip gösterme |
+| **Lokal Video** | Kamera görüntüsünü anında önizleme (PictureBox) |
+| **Hybrid Relay** | Chrome uyumluluğu için optimize edilmiş akış teknolojisi |
 
 ---
 
-## 🏗️ Mimari
+## 🏗️ Mimari ve Akış
 
-```
-           Sinyalleşme (SignalR)                   Sinyalleşme (SignalR)
-┌──────────────┐  ◄───────────────►  ┌───────────────────────┐  ◄───────────────►  ┌──────────────────┐
-│              │                     │                       │                     │                  │
-│  Web Client  │   WebRTC P2P ────►  │    ASP.NET Core       │                     │  Windows Client  │
-│  (Browser)   │   (Tarayıcı→Win)   │    SignalR Server      │                     │  (SIPSorcery)    │
-│              │                     │  http://localhost:5050 │                     │                  │
-│              │  ◄──── Base64 ───── │    Video Frame Relay   │  ◄── Base64 ─────── │                  │
-│              │  (Windows→Tarayıcı) │                       │  (Optimize JPEG)    │                  │
-└──────────────┘                     └───────────────────────┘                     └──────────────────┘
+```mermaid
+graph TD
+    A[Web İstemcisi] <-->|SignalR Sinyalleşme| B[ASP.NET Core Sunucu]
+    C[Windows İstemcisi] <-->|SignalR Sinyalleşme| B
+    A <-->|WebRTC P2P Video| C
+    A <-->|WebRTC P2P Video| A2[Diğer Web İstemcisi]
 ```
 
-### Video Akış Yönleri
-
-| Yön | Teknoloji | Performans |
-|-----|-----------|------------|
-| **Tarayıcı → Windows** | Saf WebRTC P2P (VP8) | ⚡ Düşük gecikme, yüksek kalite |
-| **Windows → Tarayıcı** | SignalR Base64 (JPEG) | 🔄 ~20 FPS, %60 JPEG kalite |
-| **Tarayıcı → Tarayıcı** | Saf WebRTC P2P (VP8) | ⚡ Düşük gecikme, yüksek kalite |
-
-> **Not:** Windows → Tarayıcı yönünde SIPSorcery kütüphanesinin VP8 encoder çıkışı Chrome'un decoder'ı ile tam uyumlu olmadığından, optimize edilmiş SignalR Base64 fallback kullanılmaktadır.
+| Yön | Teknoloji | Durum |
+|-----|-----------|-------|
+| **Web ↔ Web** | WebRTC P2P (VP8/Opus) | ✅ Aktif |
+| **Web ↔ Windows** | WebRTC P2P (VP8) | ✅ Aktif |
+| **Windows ↔ Web** | SignalR Relay (JPEG/Base64) | ✅ Aktif (Fallback) |
 
 ---
 
@@ -77,64 +78,24 @@ Modern glassmorphic Web Client ile standartlara uyumlu Windows C# Desktop Client
 
 ```
 WebRTCProjesi/
-├── .github/
-│   └── workflows/
-│       └── dotnet-desktop.yml    # GitHub Actions CI Pipeline
 ├── WebRTCSignalServer/           # ASP.NET Core SignalR Sunucusu
-│   ├── Program.cs                # Hub + API tanımları + Video Frame Relay
-│   ├── Properties/
-│   │   └── launchSettings.json   # Sunucu başlatma ayarları (port 5050)
 │   ├── wwwroot/
-│   │   ├── index.html            # Web Client SPA (glassmorphic UI)
-│   │   ├── css/                  # Ayrıştırılmış stil dosyaları
-│   │   └── js/                   # Modüler JavaScript kodları
-│   └── appsettings.json
+│   │   ├── index.html            # Web Client SPA
+│   │   ├── css/ & js/            # Stil ve Mantık dosyaları
 ├── WebRTCWindowsClient/          # WinForms + SIPSorcery Desktop Client
-│   ├── Form1.cs                  # Ana form: kamera, WebRTC, Base64 fallback
-│   ├── Form1.Designer.cs         # UI bileşenleri (video panelleri, chat)
-│   ├── Program.cs                # Giriş noktası
-│   └── WebRTCWindowsClient.csproj
-└── README.md
+│   ├── Form1.cs                  # Ana form mantığı
+└── WebRTCWindowsClient_Release.zip # Derlenmiş hazır sürüm
 ```
 
 ---
 
-## 🚀 Kurulum ve Çalıştırma
+## 🔧 Teknik Detaylar & API
 
-### Gereksinimler
-- [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0)
-- Modern tarayıcı (Chrome, Edge, Firefox)
-- Visual Studio 2022+ (Windows Client için)
-- Webcam ve mikrofon (video görüşme için)
-
-### 1. Web Client'a Bağlan (Canlı Sürüm)
-Projenin tarayıcı sürümü şu adreste canlı yayındadır:  
-👉 **[https://webrtcprojesi.onrender.com/index.html](https://webrtcprojesi.onrender.com/index.html)**  
-Oda ID ve kullanıcı adı girerek hemen test etmeye başlayabilirsiniz.
-
-### 2. Web Client'a Bağlan
-### 2. Windows Client'ı İndir ve Çalıştır
-Proje dosyaları arasındaki `WebRTCWindowsClient_Release.zip` dosyasını bilgisayarınıza indirin ve klasöre çıkarın.
-İçindeki `WebRTCWindowsClient.exe` dosyasına çift tıklayarak uygulamayı başlatın.
-Varsayılan olarak canlı sunucuya ayarlanmıştır. Odanızı ve isminizi seçip hemen bağlanabilirsiniz.
-
-### 3. Geliştirici Olarak Kendi Bilgisayarınızda (Lokal) Çalıştırma
-```bash
-cd WebRTCSignalServer
-dotnet run
-```
-Ardından Windows Client için:
-```bash
-cd WebRTCWindowsClient
-dotnet run
-```
-Veya Visual Studio'da `WebRTCWindowsClient` projesini açıp **Start** butonuna basın.
-
-### 4. Görüşme Başlatma
-1. Her iki client'tan da aynı **Oda ID** ile bağlanın
-2. **Görüşme Başlat** butonuna tıklayın
-3. Video ve ses otomatik olarak karşı tarafa iletilir
-4. Sohbet panelinden mesaj gönderin
+| Endpoint | Metot | Açıklama |
+|----------|-------|----------|
+| `/health` | `GET` | Sunucu sağlık kontrolü |
+| `/api/stats` | `GET` | Aktif kullanıcı ve oda istatistikleri |
+| `/webrtchub` | `WS` | SignalR WebSocket Hub |
 
 ---
 
